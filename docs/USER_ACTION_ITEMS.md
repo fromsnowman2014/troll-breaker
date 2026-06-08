@@ -15,11 +15,13 @@ Each item names: what to do, why, when, and how to verify it's done.
 - **When:** Now (or within the next week).
 - **Verify:** You see the developer dashboard at the URL above.
 
+- User activity: Done, Developer dashboard: https://chrome.google.com/webstore/devconsole/c58102d6-3991-4815-8ed1-2e655708904e
+
 ### §2. Seed vibe corpora — initial curation
 
 This is the most important manual artifact and the biggest single time cost.
 
-- **What:** Hand-author a seed `VibeProfile` JSON for **each** target community. Minimum launch set: `fmkorea`, `dcinside`, `theqoo`, `ruliweb`. Add others as you go.
+- **What:** Hand-author a seed `VibeProfile` JSON for **each** target community. Minimum launch set: `fmkorea`, `dcinside`, `theqoo`, `ruliweb`, `ilbe`. Add others as you go.
 - **Why:** Without good seeds, day-one quality is garbage and the product feels generic. See [`VIBE_EXTRACTION.md`](./VIBE_EXTRACTION.md) §3.
 - **What each profile needs:**
   - 5 recent best-posts (≤30 days old), transcribed: `title`, `body`, `top_comments[]`.
@@ -53,6 +55,7 @@ This is the most important manual artifact and the biggest single time cost.
 - **Why:** You'll dogfood the extension with these; also needed to write the obtain-a-key instructions for end users.
 - **When:** Before first dev build runs end-to-end.
 - **Verify:** A simple `curl` to each provider returns a 200.
+- User activity: Done (Gemini API key obtained — store in local env only, never commit)
 
 ### §5. Legal / TOS review
 
