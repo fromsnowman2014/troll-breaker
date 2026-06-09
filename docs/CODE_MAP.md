@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-07 (commit bda96ba)
+> Last updated: 2026-06-08 (commit ebeef5a)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -17,6 +17,7 @@
   - `types.ts` — `LlmClient`, `LlmChatRequest`, `LlmChatResponse`, `LlmToolDef`, `LlmToolCall`, `LlmToolChoice`
   - `mock.ts` — `MockLlm` (queue of responders), `emitToolCall(name, input)`
   - `anthropic.ts` — `AnthropicLlm` (stub; throws until wired to real API)
+  - `gemini.ts` — `GeminiLlm` (fetch-based; maps tool-use ↔ Gemini functionCall)
   - `structured.ts` — `structuredChat(llm, schema, inputSchema, req, agentName)` — tool-use w/ 1 retry
 - `src/lib/search/` — search adapter
   - `types.ts` — `SearchClient.searchWeb(query, max?) → Source[]`
@@ -26,6 +27,13 @@
   - `types.ts` — `KvStore { get, set(opts.ttlMs), delete, clear }`
   - `memory.ts` — `InMemoryKv(now?)` with TTL eviction on read
   - `keys.ts` — `StorageKeys.{vibe,vibeOverride,factMemo}`, `TTL.{vibeStructured: 7d, factMemo: 24h}`
+- `src/lib/seeds/` — bundled VibeProfile loader
+  - `index.ts` — `makeSeedLoader(raw)`, `isSkeleton(profile)`, `RawSeedLoader` type
+  - `node.ts` — `nodeFsRawLoader(seedsDir)` — fs.readFile-based, used by smoke runner
+- `extension/seeds/<site_id>.json` — bundled corpora (currently skeletons; USER_ACTION_ITEMS.md §2)
+  - fmkorea.com, dcinside.com, theqoo.net, ruliweb.com, ilbe.com
+- `scripts/smoke.ts` — end-to-end runner against a real LLM provider (USER_ACTION_ITEMS.md §9 dogfood)
+- `docs/site-extractors/<site_id>.md` — owner-curated CSS selector specs (USER_ACTION_ITEMS.md §3)
 - `src/agents/` — agent functions; each returns structured data, never UI strings
   - `_util.ts` — `withTimeout(agent, ms, p)`, `fingerprint(s)`, `DEFAULT_AGENT_TIMEOUT_MS=30_000`
   - `_vibe_fallback.ts` — `GENERIC_KO_CYNICAL` profile (last-resort)
@@ -65,9 +73,10 @@
 
 ## Known gaps / TODO
 
-- `AnthropicLlm.chat` and `BraveSearch.searchWeb` are stubs — throw until wired to real APIs.
+- `AnthropicLlm.chat` and `BraveSearch.searchWeb` are stubs — throw until wired to real APIs. (`GeminiLlm` is real.)
 - No `chrome.storage`-backed `KvStore` yet; only `InMemoryKv`. Add when extension shell lands.
-- No bundled seed-corpus loader yet. `VibeDeps.loadSeed` is an injectable hook; owner provides per-site JSON per USER_ACTION_ITEMS.md §2.
+- All 5 bundled seeds are still **skeletons** with `__TODO__` markers (USER_ACTION_ITEMS.md §2). `isSkeleton(profile)` flags them; smoke runner warns.
+- Per-site DOM extractor specs (`docs/site-extractors/*.md`) are skeletons (USER_ACTION_ITEMS.md §3); code-side `src/content/extractors/` not yet created.
 - No prompt file extraction. All prompts are inline strings in agent files; PROMPT_GUIDELINES.md §1 calls for `prompts/*.md` per agent — defer until prompts grow.
 - No `evals/` harness. Property-based fixtures (PROMPT_GUIDELINES.md §6) deferred.
 - "Deep Analyze" pipeline currently behaves like "Standard" — multi-claim splitter (AGENT_DESIGN.md §8 open question) not implemented.

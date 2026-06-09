@@ -1,0 +1,37 @@
+{
+  "site_id": "ilbe.com",
+  "display_name": "일베 (skeleton — 사용자 채움 필요)",
+  "source": "bundled-seed",
+  "last_refreshed": "2026-06-07T00:00:00.000Z",
+  "lexicon": {
+    "high_signal_words": ["__TODO__: 시그니처 단어 15~30개"],
+    "forbidden_words": ["__TODO__: 5~10개 (혐오·차별 표현 안전 처리 필요)"],
+    "emoji_or_emoticons": []
+  },
+  "sentence_shape": {
+    "avg_length": 30,
+    "paragraph_style": "short-burst",
+    "opener_patterns": ["__TODO__: 오프닝 패턴"],
+    "closer_patterns": ["__TODO__: 마지막 한 방 패턴"]
+  },
+  "tonality": {
+    "cynicism_level": 8,
+    "sarcasm_style": "__TODO__: 50단어 voice memo. 슬러/혐오 표현은 slurs.ts에서 사전 필터링됨.",
+    "political_lean": "right",
+    "taboo_topics": []
+  },
+  "few_shot_posts": [
+    {
+      "title": "__TODO__: 최근 베스트 글 제목 1",
+      "body": "__TODO__: 본문 (≤1500자, 30일 이내). VIBE_EXTRACTION.md §8에 따라 슬러 사전 제거된 상태여야 함.",
+      "top_comments": ["__TODO__: 댓글 1"],
+      "collected_at": "2026-06-07T00:00:00.000Z"
+    },
+    {
+      "title": "__TODO__: 최근 베스트 글 제목 2",
+      "body": "__TODO__: 본문.",
+      "top_comments": ["__TODO__: 댓글 1"],
+      "collected_at": "2026-06-07T00:00:00.000Z"
+    }
+  ]
+}

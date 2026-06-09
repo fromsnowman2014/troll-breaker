@@ -21,6 +21,10 @@ For a **developer** picking up implementation:
 5. [`VIBE_EXTRACTION.md`](./VIBE_EXTRACTION.md) — how site tone/trends are captured
 6. [`DATA_SCHEMAS.md`](./DATA_SCHEMAS.md) — typed contracts between modules
 7. [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md) — BYOK flow + threat model
+8. [`CODE_MAP.md`](./CODE_MAP.md) — module/signature index (CLAUDE.md protocol)
+
+For the **owner** (action items in Korean):
+- [`NEXT_STEPS_KR.md`](./NEXT_STEPS_KR.md) — 무엇을 다음에 손으로 해야 하는지, 단계별
 
 ## Document map
 
