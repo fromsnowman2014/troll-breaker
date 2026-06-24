@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-23 (Phase 2: Sword mode floating button)
+> Last updated: 2026-06-24 (URL fetch proxy for inline link fact-checking)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -21,11 +21,15 @@
 - `api/` — Vercel serverless functions (deployed to troll-breaker.vercel.app)
   - `chat.ts` — `POST /api/chat` proxy; whitelists fields, caps max_tokens, adds `Authorization: Bearer $THEGRID_API_KEY` to outbound THEGRID call
   - `search.ts` — `POST /api/search` proxy; accepts `{ query, max? }`, forwards to Brave API with `$BRAVE_API_KEY`, returns raw Brave JSON
+  - `fetch.ts` — `POST /api/fetch` proxy; accepts `{ url }`; server-side fetches URL (bypasses browser CORS); strips HTML; returns `{ title, snippet }` (max 1200 chars); blocked domain list; 8s timeout
 - `src/lib/search/` — search adapter
   - `types.ts` — `SearchClient.searchWeb(query, max?) → Source[]`
   - `mock.ts` — `MockSearch(canned)`
   - `brave.ts` — `BraveSearch` (fetch-based; `X-Subscription-Token`; dev/smoke runner only)
   - `proxy.ts` — `ProxySearch({ proxyUrl })` — POSTs to `/api/search`, parses Brave JSON into `Source[]`
+- `src/lib/fetch/` — URL content fetcher
+  - `proxy.ts` — `ProxyFetcher implements UrlFetcher`; `fetchPage(url)` POSTs to `/api/fetch`; returns `FetchResult { title, snippet, reason? }`
+  - (interface `UrlFetcher` defined inline; `OrchestratorDeps.fetcher?: UrlFetcher`)
 - `src/lib/storage/` — KV abstraction (vibe cache, fact memo)
   - `types.ts` — `KvStore { get, set(opts.ttlMs), delete, clear }`
   - `memory.ts` — `InMemoryKv(now?)` with TTL eviction on read
@@ -39,16 +43,16 @@
 - `scripts/smoke.ts` — end-to-end runner; calls the deployed Vercel proxy (or `PROXY_URL` override) for LLM
 - `docs/site-extractors/<site_id>.md` — owner-curated CSS selector specs (USER_ACTION_ITEMS.md §3)
 - `src/agents/` — agent functions; each returns structured data, never UI strings
-  - `_util.ts` — `withTimeout(agent, ms, p)`, `fingerprint(s)`, `DEFAULT_AGENT_TIMEOUT_MS=30_000`
+  - `_util.ts` — `withTimeout(agent, ms, p)`, `fingerprint(s)`, `DEFAULT_AGENT_TIMEOUT_MS=90_000`
   - `_vibe_fallback.ts` — `GENERIC_KO_CYNICAL` profile (last-resort)
   - `tools.ts` — `TOOL_NAMES`, `toolDefs` (MCP-style — get_site_vibe, verify_fact_with_links, search_web)
-  - `fact.ts` — `verifyFactWithLinks(deps, {claim, locale?, bypassCache?}) → FactResult`; caches 24h
+  - `fact.ts` — `verifyFactWithLinks(deps, {claim, searchQuery?, additionalSources?, locale?, bypassCache?}) → FactResult`; caches 24h; additionalSources merged before search results
   - `logic.ts` — `detectFallacies(deps, {text, vibe?}) → Fallacy[]`; filters hallucinated spans
   - `vibe.ts` — `getSiteVibe(deps, url)`, `rewriteInVibe(deps, text, vibe, opts)`, `finalizeConceptPost(deps, input)`, `urlToSiteId(url)`
   - `evaluator.ts` — `scoreAndCritique(deps, {draft, vibe}) → EvalScore`; PRD §5 4-axis rubric
 - `src/background/`
   - `service_worker.ts` — MV3 service worker entry; registers "Truth Check" context menu; handles `sword/request` from content script; calls `runShield`/`runSword`; opens side panel; routes results via `chrome.runtime.sendMessage` + `pendingByTab` fallback
-  - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`
+  - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`; extracts inline HTTPS URLs from selected text, fetches content via `fetcher`, injects as `additionalSources`
 - `src/content/`
   - `content_script.ts` — injects "✦ Strike" floating button into `<textarea>` and `[contenteditable]`; sends `sword/request` on click; listens for `insert_back` to write `final_post` back into last focused textarea; `MutationObserver` for dynamic elements
 - `src/sidepanel/`
