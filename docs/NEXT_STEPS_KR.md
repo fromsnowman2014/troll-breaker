@@ -2,11 +2,216 @@
 
 > **갱신:** 2026-06-24
 >
-> **코드 현황 (2026-06-24):** Phase 0(익스텐션 셸) + Phase 1(Shield MVP) + Phase 2(Sword 플로팅 버튼) + `/api/search` 프록시까지 완료. 실제 동작 확인됨.
+> **코드 현황 (2026-06-24):** Phase 0(익스텐션 셸) + Phase 1(Shield MVP) + Phase 2(Sword 플로팅 버튼) + `/api/search` 프록시 + `/api/fetch` URL 콘텐츠 프록시까지 완료. 실제 동작 확인됨.
 
-코드 측은 **에이전트 계층 + THEGRID 어댑터 + Vercel 프록시 + Brave Search 서버사이드 프록시 + 익스텐션 셸 + Shield/Sword MVP**까지 완료. 아래는 **운영자가 직접** 해야 하는 남은 일들입니다.
+코드 측은 **에이전트 계층 + THEGRID 어댑터 + Vercel 프록시 + Brave Search + URL fetch 프록시 + 익스텐션 셸 + Shield/Sword MVP**까지 완료.
 
 > 영문 / 상세 체크리스트: [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md)
+
+---
+
+## Phase 3: Truth Check UX 재설계 — 해석 + 팩트체크 + 댓글 모드
+
+> **구현 전 계획 단계.** 아래는 코드 변경 계획이며, 실제 구현은 이 계획을 확정한 뒤 진행합니다.
+
+### 배경 및 목표
+
+현재 "Truth Check"는 우클릭 → 팩트체크 결과 하나를 사이드 패널에 표시한다.
+사용자 요구사항은 세 가지 기능이 **하나의 플로우**에 통합되어야 한다:
+
+1. **해석 (Interpret)** — 선택한 글을 정상 한국어로 풀어씀. 속어·줄임말·밈을 표준어로 번역.
+2. **팩트체크 (Fact)** — 기존 Shield 기능. 주장/링크를 Brave Search + URL fetch로 검증하고 원본 기사 링크 제공.
+3. **댓글 작성 (Reply)** — 버튼별 5가지 댓글 톤 선택 → vibe 적용된 댓글 생성.
+
+---
+
+### Phase 3-A: 해석 에이전트 (Interpret)
+
+#### 무엇을 만드나
+
+`src/agents/interpret.ts` — 새 에이전트 함수
+
+```
+interpretText(deps, { text, vibe }) → InterpretResult
+```
+
+**InterpretResult 스키마 (새 파일 `src/lib/schemas/interpret.ts`)**
+```ts
+{
+  plain_text: string;        // 속어·줄임말을 표준어로 치환한 전체 문장
+  glossary: {                // 치환된 단어/구 목록 (UI에서 hover tooltip 등에 사용)
+    original: string;
+    normalized: string;
+    note?: string;
+  }[];
+}
+```
+
+#### 프롬프트 설계
+
+- system: "당신은 한국 인터넷 커뮤니티 용어 전문가입니다. 주어진 글의 속어·줄임말·밈을 표준 한국어로 해석하세요. 의미를 바꾸지 말고, 독자가 이해할 수 있게만 바꾸세요."
+- user: `text: <선택 텍스트>\nvibe_site: <site_id>`
+- tool: `emit_result` with `InterpretResultSchema`
+
+#### 오케스트레이터 변경
+
+`runShield` 호출 시 `interpretText`를 `verifyFactWithLinks`, `detectFallacies`와 **병렬**로 실행.
+결과를 `ShieldResult`에 `interpretation?: InterpretResult` 필드로 추가.
+
+**ShieldResult 스키마 변경 (`src/lib/schemas/results.ts`)**
+```ts
+ShieldResultSchema 에 .extend({ interpretation: InterpretResultSchema.optional() })
+```
+
+---
+
+### Phase 3-B: 팩트체크 결과 UI 개선
+
+#### 현재 문제
+
+- `vibe_adjusted_summary`가 사이드 패널 전체를 채우는 긴 텍스트 하나 → 가독성 낮음
+- 출처 링크가 3개 이하로 잘리며 제목만 표시됨 → 사용자가 원본 기사를 못 찾음
+- 해석 결과를 표시할 자리가 없음
+
+#### UI 변경 계획 (`src/sidepanel/ResultCard.tsx`)
+
+ShieldResult 카드를 **탭 구조**로 재설계:
+
+```
+[ 해석 | 팩트체크 | 댓글 ]   ← 탭 헤더
+```
+
+**해석 탭 (기본 탭)**
+- `interpretation.plain_text` 전체 표시 (스크롤 가능)
+- `interpretation.glossary` 항목을 태그 형태로 아래에 나열 (원어 → 표준어)
+
+**팩트체크 탭**
+- 판정 배지 (`verdict`) + 신뢰도 (confidence %)
+- `fact.summary` 요약
+- 출처 목록: 제목 + 도메인 + 클릭 가능한 URL — 최대 5개, 스니펫 토글 가능
+- `vibe_adjusted_summary`는 접을 수 있는 "커뮤니티 스타일 해설" 섹션으로 이동
+
+**댓글 탭**
+- 5개 댓글 모드 버튼 (아래 Phase 3-C 참고)
+- 버튼 클릭 → 로딩 → 생성된 댓글 표시 + 복사 버튼
+
+---
+
+### Phase 3-C: 댓글 생성 에이전트 (Reply)
+
+#### 5가지 댓글 모드
+
+| 버튼 레이블 | `reply_mode` 값 | 설명 |
+|---|---|---|
+| ⚔️ 공격 | `attack` | 상대 주장을 정면 반박. 팩트 근거 활용. |
+| 🛡 방어 | `defend` | 원글 주장을 옹호. 반론 차단 논리 구성. |
+| 👍 동조 | `agree` | 원글에 공감 표현. 추가 근거 덧붙이기. |
+| 😏 비꼬기 | `mock` | 냉소적 비꼬기. vibe 풀 활용. 감정 배제. |
+| 😂 유머 | `humor` | 맥락 있는 유머 댓글. 커뮤니티 밈 스타일. |
+
+#### 새 에이전트
+
+`src/agents/reply.ts` — `generateReply(deps, input) → ReplyResult`
+
+**ReplyInput**
+```ts
+{
+  original_text: string;    // 선택한 원본 글
+  fact_summary?: string;    // 팩트체크 요약 (있으면 근거로 활용)
+  sources?: Source[];       // 팩트체크 출처 (공격/방어 모드에서 링크 인용)
+  reply_mode: "attack" | "defend" | "agree" | "mock" | "humor";
+  vibe: VibeProfile;
+}
+```
+
+**ReplyResult 스키마 (`src/lib/schemas/reply.ts`)**
+```ts
+{
+  reply_mode: string;
+  post: string;             // 생성된 댓글 (vibe 적용)
+  cited_urls: string[];     // 댓글 내 인용된 URL 목록
+}
+```
+
+**프롬프트 전략 (모드별)**
+- `attack`: "다음 팩트와 출처를 근거로 원글 주장을 반박하는 댓글을 써라. 감정 없이 팩트로."
+- `defend`: "원글의 주장을 지지하고 반론 여지를 차단하는 논리 댓글을 써라."
+- `agree`: "원글에 공감하며 추가 관점이나 근거를 덧붙이는 댓글을 써라."
+- `mock`: "원글을 냉소적으로 비꼬는 댓글. vibe 스타일 필수. 직접 욕 금지."
+- `humor`: "원글의 맥락을 이해한 유머 댓글. 커뮤니티 밈 스타일."
+- 모든 모드에 vibe 스타일 블록 주입 (evaluator와 동일한 `renderStyle(vibe)` 방식)
+
+#### 서비스 워커 변경
+
+`sword/reply` 메시지 타입 추가:
+```ts
+// content script → service worker
+{ kind: "reply/request"; request_id: string; original_text: string; fact_context?: ...; reply_mode: ReplyMode; page_url: string }
+
+// service worker → side panel
+{ kind: "reply/loading"; request_id: string }
+{ kind: "reply/result"; request_id: string; payload: ReplyResult }
+{ kind: "reply/error"; request_id: string; error: ... }
+```
+
+사이드 패널에서 버튼 클릭 → `chrome.runtime.sendMessage({ kind: "reply/request", ... })` 전송.
+서비스 워커가 `generateReply` 호출 후 결과 반환.
+
+---
+
+### Phase 3-D: 전체 플로우 변경 요약
+
+```
+우클릭 → "Truth Check"
+         ↓
+  서비스 워커: runShield (기존)
+   + interpretText (신규, 병렬)
+         ↓
+  사이드 패널 오픈 → [ 해석 | 팩트체크 | 댓글 ] 탭
+         ↓                    ↓                 ↓
+   plain_text           verdict/sources    버튼 5개
+   glossary             summary            (클릭 시 reply/request 전송)
+                        vibe_summary       → generateReply 결과 표시
+```
+
+---
+
+### Phase 3 구현 순서 (우선순위)
+
+1. **3-A**: `interpret.ts` 에이전트 + `InterpretResult` 스키마 + `runShield` 병렬 추가
+2. **3-B**: `ResultCard.tsx` 탭 UI 재설계 (해석·팩트체크 탭)
+3. **3-C**: `reply.ts` 에이전트 + `ReplyResult` 스키마 + 댓글 탭 UI
+4. **3-D**: 서비스 워커 `reply/request` 메시지 핸들러 추가
+
+각 단계 완료 기준:
+- 1: `npm test` 통과 + `npm run smoke`에서 `interpretation` 필드 확인
+- 2: 빌드 후 사이드 패널에서 탭 전환 동작 확인
+- 3: 댓글 탭 → 버튼 클릭 → 생성된 댓글 표시 확인
+- 4: 서비스 워커 → 사이드 패널 메시지 라운드트립 확인
+
+---
+
+### 주요 파일 변경 목록 (Phase 3)
+
+**새로 만들 파일:**
+- `src/lib/schemas/interpret.ts` — `InterpretResultSchema`, `InterpretResult`
+- `src/lib/schemas/reply.ts` — `ReplyResultSchema`, `ReplyResult`, `ReplyMode`
+- `src/agents/interpret.ts` — `interpretText(deps, input) → InterpretResult`
+- `src/agents/reply.ts` — `generateReply(deps, input) → ReplyResult`
+
+**수정할 파일:**
+- `src/lib/schemas/results.ts` — `ShieldResult`에 `interpretation?` 추가
+- `src/background/orchestrator.ts` — `runShield`에 `interpretText` 병렬 추가; `OrchestratorDeps` 확장
+- `src/background/service_worker.ts` — `reply/request` 메시지 핸들러 추가
+- `src/sidepanel/app.tsx` — `reply/loading|result|error` 메시지 처리 추가
+- `src/sidepanel/ResultCard.tsx` — 탭 구조 재설계; `ReplyCard` 추가
+
+**변경 없는 파일:**
+- `src/agents/fact.ts`, `vibe.ts`, `evaluator.ts` — 재사용 그대로
+- `api/chat.ts`, `api/search.ts`, `api/fetch.ts` — 재사용 그대로
+- `extension/seeds/*.json` — 재사용 그대로
+
+---
 
 ---
 
