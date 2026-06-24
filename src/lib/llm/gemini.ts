@@ -35,7 +35,7 @@ interface GeminiResponse {
 }
 
 const DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 export class GeminiLlm implements LlmClient {
   private readonly fetchImpl: typeof fetch;

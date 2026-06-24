@@ -15,6 +15,8 @@ import { GeminiLlm } from "../src/lib/llm/gemini.js";
 import { AnthropicLlm } from "../src/lib/llm/anthropic.js";
 import type { LlmClient } from "../src/lib/llm/types.js";
 import { MockSearch } from "../src/lib/search/mock.js";
+import { BraveSearch } from "../src/lib/search/brave.js";
+import type { SearchClient } from "../src/lib/search/types.js";
 import { InMemoryKv } from "../src/lib/storage/memory.js";
 import { makeSeedLoader, nodeFsRawLoader, isSkeleton } from "../src/lib/seeds/index.js";
 import { runShield, runSword } from "../src/background/orchestrator.js";
@@ -46,15 +48,27 @@ function bail(msg: string): never {
   process.exit(1);
 }
 
+function buildSearch(): SearchClient {
+  const key = process.env.BRAVE_API_KEY ?? "";
+  if (!key) {
+    console.warn(
+      "[smoke] BRAVE_API_KEY not set — using MockSearch (canned Wikipedia fixture).",
+    );
+    return new MockSearch([
+      {
+        title: "Wikipedia — Example",
+        url: "https://en.wikipedia.org/wiki/Example",
+        snippet: "Example is widely used as a placeholder term.",
+      },
+    ]);
+  }
+  console.log("[smoke] Using BraveSearch.");
+  return new BraveSearch({ apiKey: key });
+}
+
 async function main() {
   const llm = buildLlm();
-  const search = new MockSearch([
-    {
-      title: "Wikipedia — Example",
-      url: "https://en.wikipedia.org/wiki/Example",
-      snippet: "Example is widely used as a placeholder term.",
-    },
-  ]);
+  const search = buildSearch();
   const storage = new InMemoryKv();
   const loadSeed = makeSeedLoader(nodeFsRawLoader(SEEDS_DIR));
 

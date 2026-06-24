@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-08 (commit ebeef5a)
+> Last updated: 2026-06-09 (commit pending)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -22,7 +22,7 @@
 - `src/lib/search/` — search adapter
   - `types.ts` — `SearchClient.searchWeb(query, max?) → Source[]`
   - `mock.ts` — `MockSearch(canned)`
-  - `brave.ts` — `BraveSearch` (stub)
+  - `brave.ts` — `BraveSearch` (fetch-based; `X-Subscription-Token`)
 - `src/lib/storage/` — KV abstraction (vibe cache, fact memo)
   - `types.ts` — `KvStore { get, set(opts.ttlMs), delete, clear }`
   - `memory.ts` — `InMemoryKv(now?)` with TTL eviction on read
@@ -46,7 +46,7 @@
   - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`
 - `tests/` — vitest unit tests; all mocked, no real LLM calls
   - `_fixtures.ts` — `fixtureVibe`, `fixtureSources`
-  - `schemas.test.ts`, `fact.test.ts`, `logic.test.ts`, `vibe.test.ts`, `evaluator.test.ts`, `orchestrator.test.ts`
+  - `schemas.test.ts`, `fact.test.ts`, `logic.test.ts`, `vibe.test.ts`, `evaluator.test.ts`, `orchestrator.test.ts`, `seeds.test.ts`, `brave.test.ts`, `gemini.test.ts`
 
 ## Key types
 
@@ -73,9 +73,9 @@
 
 ## Known gaps / TODO
 
-- `AnthropicLlm.chat` and `BraveSearch.searchWeb` are stubs — throw until wired to real APIs. (`GeminiLlm` is real.)
+- `AnthropicLlm.chat` is a stub — throws until wired to the real API. (`GeminiLlm` and `BraveSearch` are real.)
 - No `chrome.storage`-backed `KvStore` yet; only `InMemoryKv`. Add when extension shell lands.
-- All 5 bundled seeds are still **skeletons** with `__TODO__` markers (USER_ACTION_ITEMS.md §2). `isSkeleton(profile)` flags them; smoke runner warns.
+- `fmkorea.com` seed is curated; `dcinside.com`, `theqoo.net`, `ruliweb.com`, `ilbe.com` still have `__TODO__` markers. `isSkeleton(profile)` flags skeletons; smoke runner warns.
 - Per-site DOM extractor specs (`docs/site-extractors/*.md`) are skeletons (USER_ACTION_ITEMS.md §3); code-side `src/content/extractors/` not yet created.
 - No prompt file extraction. All prompts are inline strings in agent files; PROMPT_GUIDELINES.md §1 calls for `prompts/*.md` per agent — defer until prompts grow.
 - No `evals/` harness. Property-based fixtures (PROMPT_GUIDELINES.md §6) deferred.

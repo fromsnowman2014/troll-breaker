@@ -13,20 +13,25 @@ describe("seed loader", () => {
     expect(await load("does-not-exist.test")).toBeUndefined();
   });
 
-  it("loads and validates bundled site seeds (currently skeleton)", async () => {
+  it("loads and validates bundled site seeds", async () => {
     const load = makeSeedLoader(nodeFsRawLoader(SEEDS_DIR));
-    for (const site of [
-      "fmkorea.com",
-      "dcinside.com",
-      "theqoo.net",
-      "ruliweb.com",
-      "ilbe.com",
-    ]) {
+    // Sites with __TODO__ markers still present (owner has not curated yet).
+    const stillSkeleton = ["dcinside.com", "theqoo.net", "ruliweb.com", "ilbe.com"];
+    // Sites the owner has filled with real data.
+    const curated = ["fmkorea.com"];
+
+    for (const site of [...stillSkeleton, ...curated]) {
       const profile = await load(site);
       expect(profile, `seed ${site} should load`).toBeDefined();
       expect(profile!.site_id).toBe(site);
-      // Skeletons should be flagged so UI/CI can warn.
-      expect(isSkeleton(profile!)).toBe(true);
+    }
+    for (const site of stillSkeleton) {
+      const profile = await load(site);
+      expect(isSkeleton(profile!), `${site} should still be skeleton`).toBe(true);
+    }
+    for (const site of curated) {
+      const profile = await load(site);
+      expect(isSkeleton(profile!), `${site} should be curated`).toBe(false);
     }
   });
 
