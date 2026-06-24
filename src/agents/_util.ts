@@ -1,6 +1,6 @@
 import { AgentTimeoutError } from "../lib/schemas/errors.js";
 
-export const DEFAULT_AGENT_TIMEOUT_MS = 30_000;
+export const DEFAULT_AGENT_TIMEOUT_MS = 90_000;
 
 export async function withTimeout<T>(
   agent: string,

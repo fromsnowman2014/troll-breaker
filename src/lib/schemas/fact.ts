@@ -4,8 +4,8 @@ export const SourceSchema = z.object({
   title: z.string().min(1),
   url: z.string().url().startsWith("https://", "sources must be HTTPS"),
   publisher: z.string().optional(),
-  published_at: z.string().datetime().optional(),
-  snippet: z.string().max(280),
+  published_at: z.string().optional(),
+  snippet: z.string().max(400),
 });
 
 export const FactResultSchema = z

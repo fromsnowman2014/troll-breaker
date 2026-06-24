@@ -1,5 +1,6 @@
 import { TheGridLlm } from "../lib/llm/thegrid.js";
 import { ProxySearch } from "../lib/search/proxy.js";
+import { ProxyFetcher } from "../lib/fetch/proxy.js";
 import { ChromeKvStore } from "../lib/storage/chrome.js";
 import { makeSeedLoader } from "../lib/seeds/index.js";
 import { extensionRawLoader } from "../lib/seeds/extension.js";
@@ -9,11 +10,13 @@ import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
 
 const PROXY_URL = "https://troll-breaker.vercel.app/api/chat";
 const SEARCH_PROXY_URL = "https://troll-breaker.vercel.app/api/search";
+const FETCH_PROXY_URL = "https://troll-breaker.vercel.app/api/fetch";
 
 function buildDeps(): OrchestratorDeps {
   return {
     llm: new TheGridLlm({ proxyUrl: PROXY_URL }),
     search: new ProxySearch({ proxyUrl: SEARCH_PROXY_URL }),
+    fetcher: new ProxyFetcher(FETCH_PROXY_URL),
     storage: new ChromeKvStore(),
     loadSeed: makeSeedLoader(extensionRawLoader()),
   };

@@ -12,8 +12,12 @@ import type { Fallacy } from "../lib/schemas/fallacy.js";
 import type { Pipeline, ShieldResult, SwordResult } from "../lib/schemas/results.js";
 import type { VibeProfile } from "../lib/schemas/vibe.js";
 import { AppError } from "../lib/schemas/errors.js";
+import type { UrlFetcher } from "../lib/fetch/proxy.js";
 
-export interface OrchestratorDeps extends FactDeps, LogicDeps, VibeDeps, EvaluatorDeps {}
+export interface OrchestratorDeps extends FactDeps, LogicDeps, VibeDeps, EvaluatorDeps {
+  /** Optional: fetches page content for inline URLs found in selected text. */
+  fetcher?: UrlFetcher;
+}
 
 export interface ShieldRequest {
   request_id: string;
@@ -48,10 +52,11 @@ export async function runShield(
 
   // Extract any HTTPS URLs embedded in the selected text to use as known sources.
   const inlineUrls = extractHttpsUrls(req.selected_text);
-  const inlineSources = inlineUrlsToSources(inlineUrls);
-
   // Build a short search query: first sentence or first 120 chars of non-URL text.
   const searchQuery = buildSearchQuery(req.selected_text);
+
+  // Fetch inline URLs in parallel (best-effort, failures silently fall back to URL-only source).
+  const inlineSources = await resolveInlineSources(inlineUrls, deps.fetcher);
 
   const factPromise = safeFact(deps, req.selected_text, searchQuery, inlineSources);
   const fallaciesPromise = pipeline === "fast"
@@ -81,18 +86,43 @@ function extractHttpsUrls(text: string): string[] {
   return [...new Set(text.match(re) ?? [])];
 }
 
-/** Turn raw URLs into minimal Source objects so they appear in candidate_sources. */
-function inlineUrlsToSources(urls: string[]): Source[] {
-  return urls.map((url) => {
-    // Derive a readable title from the URL hostname + path.
-    try {
-      const u = new URL(url);
-      const title = `${u.hostname}${u.pathname.replace(/\/$/, "") || ""}`;
-      return { title, url, snippet: `본문에 포함된 링크: ${url}` };
-    } catch {
-      return { title: url, url, snippet: `본문에 포함된 링크: ${url}` };
-    }
-  });
+/**
+ * Resolve inline URLs to Source objects.
+ * If a fetcher is provided, attempts to fetch actual page content for richer snippets.
+ * Falls back to URL-only source on any failure.
+ */
+async function resolveInlineSources(urls: string[], fetcher?: UrlFetcher): Promise<Source[]> {
+  return Promise.all(
+    urls.map(async (url): Promise<Source> => {
+      let hostname: string;
+      try {
+        hostname = new URL(url).hostname;
+      } catch {
+        return { title: url, url, snippet: `인용 링크: ${url}` };
+      }
+
+      if (!fetcher) {
+        return { title: hostname, url, snippet: `인용 링크 (본문 미조회): ${url}` };
+      }
+
+      const result = await fetcher.fetchPage(url);
+      if (result.snippet) {
+        return {
+          title: result.title ?? hostname,
+          url,
+          snippet: result.snippet.slice(0, 280),
+          publisher: hostname,
+        };
+      }
+      // Fetch failed or blocked — still include the URL so LLM knows it was cited.
+      return {
+        title: result.title ?? hostname,
+        url,
+        snippet: `인용 링크 (내용 조회 실패: ${result.reason ?? "unknown"}): ${url}`,
+        publisher: hostname,
+      };
+    }),
+  );
 }
 
 /**

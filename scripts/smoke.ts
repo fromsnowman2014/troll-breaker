@@ -20,11 +20,13 @@ import type { SearchClient } from "../src/lib/search/types.js";
 import { InMemoryKv } from "../src/lib/storage/memory.js";
 import { makeSeedLoader, isSkeleton } from "../src/lib/seeds/index.js";
 import { nodeFsRawLoader } from "../src/lib/seeds/node.js";
+import { ProxyFetcher } from "../src/lib/fetch/proxy.js";
 import { runShield, runSword } from "../src/background/orchestrator.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SEEDS_DIR = resolve(REPO_ROOT, "extension/seeds");
 const DEFAULT_PROXY_URL = "https://troll-breaker.vercel.app/api/chat";
+const DEFAULT_FETCH_PROXY_URL = "https://troll-breaker.vercel.app/api/fetch";
 
 function buildLlm(): LlmClient {
   const proxyUrl = process.env.PROXY_URL || DEFAULT_PROXY_URL;
@@ -56,7 +58,8 @@ async function main() {
   const storage = new InMemoryKv();
   const loadSeed = makeSeedLoader(nodeFsRawLoader(SEEDS_DIR));
 
-  const deps = { llm, search, storage, loadSeed };
+  const fetcher = new ProxyFetcher(DEFAULT_FETCH_PROXY_URL);
+  const deps = { llm, search, fetcher, storage, loadSeed };
 
   const seed = await loadSeed("fmkorea.com");
   if (seed && isSkeleton(seed)) {
@@ -66,10 +69,19 @@ async function main() {
     console.warn("[smoke]          See USER_ACTION_ITEMS.md §2 and VIBE_EXTRACTION.md §3.\n");
   }
 
-  console.log("[smoke] Running Shield…");
+  // Real-world test case: fmkorea post with inline URLs (the problematic case).
+  const REAL_CASE = `[펌] '박원순 사람'도 품었던 오세훈…이번엔 고위직 대폭 물갈이, 왜
+https://www.fmkorea.com/9995776148
+https://n.news.naver.com/mnews/article/025/0003532654?sid=102
+
+하지만 6·3지방선거를 거치며 서울시 내부 분위기는 크게 달라졌다. 선거 과정에서 예상보다 많은 간부가 정원오 후보 캠프와 직간접적으로 연결된 것으로 드러나면서다. 특히 오 시장이 과거 탕평 인사 차원에서 중용했던 인사들이 정 후보 캠프 측에 일제히 합류해 충격이 작지 않았다는 후문이다.
+
+여성시대 ㅋㅋㅋㅋ`;
+
+  console.log("[smoke] Running Shield (real URL inline case)…");
   const shield = await runShield(deps, {
     request_id: "smoke-shield-1",
-    selected_text: "이 사이트는 한국에서 가장 큰 커뮤니티이다.",
+    selected_text: REAL_CASE,
     page_url: "https://www.fmkorea.com/best",
   });
 
