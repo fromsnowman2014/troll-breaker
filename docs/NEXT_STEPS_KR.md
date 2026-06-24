@@ -1,10 +1,10 @@
 # 다음에 해야 할 일 (한국어 안내)
 
-> **갱신:** 2026-06-23
+> **갱신:** 2026-06-24
 >
-> **아키텍처 변경 안내 (2026-06-23):** BYOK 모델 폐기, 단일 공유 키(`THEGRID_API_KEY`, Vercel env) + 서버리스 프록시(`/api/chat`)로 전환. 유저는 더 이상 API 키를 다루지 않습니다.
+> **코드 현황 (2026-06-24):** Phase 0(익스텐션 셸) + Phase 1(Shield MVP) + Phase 2(Sword 플로팅 버튼) + `/api/search` 프록시까지 완료. 실제 동작 확인됨.
 
-코드 측은 **에이전트 계층 + THEGRID 어댑터 + Vercel 프록시 + Brave Search 와이어링 + 시드 로더 + smoke runner**까지 완료. 아래는 **운영자가 직접** 해야 동작이 살아나는 일들입니다.
+코드 측은 **에이전트 계층 + THEGRID 어댑터 + Vercel 프록시 + Brave Search 서버사이드 프록시 + 익스텐션 셸 + Shield/Sword MVP**까지 완료. 아래는 **운영자가 직접** 해야 하는 남은 일들입니다.
 
 > 영문 / 상세 체크리스트: [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md)
 
@@ -153,12 +153,19 @@ grep -l __TODO__ docs/site-extractors/*.md   # _TEMPLATE.md 외엔 없어야 완
 
 ---
 
-## 코드 측에서 자동으로 따라오는 다음 작업 (참고)
+## 코드 측에서 완료된 작업 (참고)
 
-- 익스텐션 셸 (Manifest V3, side panel, 옵션 페이지) — 옵션 페이지는 이제 **키 입력 UI가 없음**. 설정/whitelist 관리만.
-- 콘텐츠 스크립트 + 사이트별 DOM extractor (3번 스펙 필요).
-- `chrome.storage` 어댑터 (비밀 정보 보관 없음).
-- (선택) `/api/search` 프록시 추가해서 Brave도 서버 측으로 — 현재는 dev 전용.
+- ✅ 익스텐션 셸 (Manifest V3, Vite+CRXJS, service worker, side panel, options page)
+- ✅ Shield MVP — 우클릭 → Truth Check → 사실확인 + vibe 보정 결과 표시
+- ✅ Sword MVP — ✦ Strike 플로팅 버튼 → 4축 점수 + 완성된 글 + 복사
+- ✅ `/api/search` 프록시 — Brave Search가 서버사이드로 전환됨 (BRAVE_API_KEY Vercel env var 필요)
+- ✅ `chrome.storage` 어댑터 (비밀 정보 보관 없음)
+
+## 코드 측에서 다음으로 해야 할 작업 (참고)
+
+- 콘텐츠 스크립트 DOM extractor — 3번 스펙(DOM 셀렉터) 완성 후 구현 가능
+- Standard/Deep 파이프라인 UI 토글 (Phase 3+)
+- Chat refinement (Phase 3)
 
 ---
 

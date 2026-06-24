@@ -8,14 +8,14 @@
 
 ---
 
-## 진행 상황 한눈에 보기 (2026-06-23 기준)
+## 진행 상황 한눈에 보기 (2026-06-24 기준)
 
 ```
 [x] Chrome Web Store 개발자 계정 ($5)        ← 발급 완료
 [x] THEGRID API 키 발급 + Vercel 등록        ← 운영자가 완료
-[ ] Vercel에 /api/chat 프록시 배포           ← git push 후 자동 배포 필요
-[ ] 배포된 프록시 동작 확인                  ← curl/smoke runner로 검증
-[x] Brave Search API 키 발급                 ← .env에 등록 + 코드 와이어링 완료 (dev only)
+[x] Vercel에 /api/chat 프록시 배포           ← 배포 완료, 동작 확인
+[x] 배포된 프록시 동작 확인                  ← Truth Check 실제 동작 확인
+[x] Brave Search API 키 발급                 ← /api/search 프록시로 서버사이드 전환 완료
 [x] fmkorea.com 시드 코퍼스                  ← 큐레이션 완료
 [ ] dcinside.com 시드 코퍼스                 ← __TODO__ 마커 남음
 [ ] theqoo.net  시드 코퍼스                  ← __TODO__ 마커 남음
@@ -25,8 +25,9 @@
 [ ] dcinside.com / theqoo / ruliweb / ilbe DOM 스펙
 [ ] THEGRID + 커뮤니티 + CWS TOS 검토
 [ ] 프라이버시 정책 안정 URL 게시 (서버 프록시 반영)
-[ ] 기술 스파이크 3건 (TECH_STACK §10)
-[ ] 아키텍처 의사결정 4건 (ARCHITECTURE §8)
+[x] 익스텐션 셸 (Phase 0)                   ← Vite+CRXJS, manifest, service worker 완료
+[x] Shield MVP (Phase 1)                     ← Truth Check 우클릭 → side panel 결과 표시 완료
+[x] Sword MVP (Phase 2)                      ← ✦ Strike 플로팅 버튼 → 글 보정 + 복사 완료
 [ ] 스토어 리스팅 자산 (아이콘/스크린샷/카피)
 [ ] 이슈 트래커 URL 설정
 [ ] 월간 시드 리프레시 캘린더 등록
