@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
+import type { ReplyResult, ReplyMode } from "../lib/schemas/reply.js";
 import type { AppError } from "../lib/schemas/errors.js";
 
 type AppErrorObj = { code: AppError["code"]; message: string };
@@ -17,49 +19,278 @@ const VERDICT_LABEL: Record<string, string> = {
   unverified: "미확인",
 };
 
+const REPLY_MODES: { mode: ReplyMode; label: string }[] = [
+  { mode: "attack", label: "⚔️ 공격" },
+  { mode: "defend", label: "🛡 방어" },
+  { mode: "agree", label: "👍 동조" },
+  { mode: "mock", label: "😏 비꼬기" },
+  { mode: "humor", label: "😂 유머" },
+];
+
 function VerdictBadge({ verdict }: { verdict: string }) {
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${VERDICT_STYLE[verdict] ?? VERDICT_STYLE.unverified}`}>
+    <span
+      className={`px-2 py-0.5 rounded text-xs font-semibold ${VERDICT_STYLE[verdict] ?? VERDICT_STYLE.unverified}`}
+    >
       {VERDICT_LABEL[verdict] ?? verdict}
     </span>
   );
 }
 
-export function ResultCard({ result }: { result: ShieldResult }) {
+type Tab = "interpret" | "fact" | "reply";
+
+export function ResultCard({
+  result,
+  replyResult,
+  replyLoading,
+}: {
+  result: ShieldResult;
+  replyResult: ReplyResult | null;
+  replyLoading: boolean;
+}) {
+  const [tab, setTab] = useState<Tab>("interpret");
+
+  const hasInterpret = !!result.interpretation;
+
+  // Auto-select fact tab if no interpretation available
+  const activeTab = !hasInterpret && tab === "interpret" ? "fact" : tab;
+
+  function requestReply(mode: ReplyMode) {
+    chrome.runtime.sendMessage({
+      kind: "reply/request",
+      request_id: `reply-${Date.now()}`,
+      original_text: result.claim_excerpt,
+      fact_summary: result.fact.summary,
+      sources: result.fact.sources,
+      reply_mode: mode,
+      page_url: "",
+    });
+  }
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex flex-col h-full">
+      {/* Header strip */}
+      <div className="px-4 pt-3 pb-0 flex items-center gap-2 flex-wrap border-b border-slate-800">
         <VerdictBadge verdict={result.fact.verdict} />
-        <span className="text-xs text-slate-400">{result.pipeline} pipeline</span>
         <span className="text-xs text-slate-500 ml-auto">{result.vibe_used.display_name}</span>
       </div>
 
-      <blockquote className="border-l-2 border-slate-600 pl-3 text-sm text-slate-300 italic line-clamp-2">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-800">
+        {hasInterpret && (
+          <TabButton active={activeTab === "interpret"} onClick={() => setTab("interpret")}>
+            해석
+          </TabButton>
+        )}
+        <TabButton active={activeTab === "fact"} onClick={() => setTab("fact")}>
+          팩트체크
+        </TabButton>
+        <TabButton active={activeTab === "reply"} onClick={() => setTab("reply")}>
+          댓글 작성
+        </TabButton>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "interpret" && result.interpretation && (
+          <InterpretTab interpretation={result.interpretation} />
+        )}
+        {activeTab === "fact" && <FactTab result={result} />}
+        {activeTab === "reply" && (
+          <ReplyTab
+            onRequest={requestReply}
+            replyResult={replyResult}
+            replyLoading={replyLoading}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+        active
+          ? "border-blue-400 text-blue-300"
+          : "border-transparent text-slate-500 hover:text-slate-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function InterpretTab({ interpretation }: { interpretation: NonNullable<ShieldResult["interpretation"]> }) {
+  return (
+    <div className="p-4 space-y-4">
+      <p className="text-sm text-slate-200 whitespace-pre-line leading-relaxed">
+        {interpretation.plain_text}
+      </p>
+
+      {interpretation.glossary.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400 font-medium">용어 해설</p>
+          <div className="flex flex-wrap gap-2">
+            {interpretation.glossary.map((entry, i) => (
+              <div key={i} className="bg-slate-800 rounded px-2 py-1 text-xs">
+                <span className="text-yellow-300 font-medium">{entry.original}</span>
+                <span className="text-slate-500 mx-1">→</span>
+                <span className="text-slate-200">{entry.normalized}</span>
+                {entry.note && (
+                  <span className="block text-slate-500 text-xs mt-0.5">{entry.note}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FactTab({ result }: { result: ShieldResult }) {
+  const [showSummary, setShowSummary] = useState(false);
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center gap-3">
+        <VerdictBadge verdict={result.fact.verdict} />
+        <span className="text-xs text-slate-400">
+          신뢰도 {Math.round(result.fact.confidence * 100)}%
+        </span>
+      </div>
+
+      <blockquote className="border-l-2 border-slate-600 pl-3 text-xs text-slate-400 italic line-clamp-2">
         {result.claim_excerpt}
       </blockquote>
 
-      <p className="text-sm text-slate-200 whitespace-pre-line leading-relaxed">
-        {result.vibe_adjusted_summary}
-      </p>
+      <p className="text-sm text-slate-200 leading-relaxed">{result.fact.summary}</p>
 
       {result.fact.sources.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-slate-400 font-medium">출처</p>
-          <ul className="space-y-1">
-            {result.fact.sources.slice(0, 3).map((s, i) => (
-              <li key={i} className="text-xs">
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400 font-medium">출처 ({result.fact.sources.length})</p>
+          <ul className="space-y-2">
+            {result.fact.sources.slice(0, 5).map((s, i) => (
+              <li key={i} className="text-xs bg-slate-800 rounded p-2 space-y-1">
                 <a
                   href={s.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-400 hover:underline truncate block"
+                  className="text-blue-400 hover:underline block font-medium"
                 >
-                  {s.title || s.url}
+                  {s.title || new URL(s.url).hostname}
                 </a>
+                {s.publisher && (
+                  <span className="text-slate-500">{s.publisher}</span>
+                )}
+                {s.snippet && (
+                  <p className="text-slate-400 line-clamp-2">{s.snippet}</p>
+                )}
               </li>
             ))}
           </ul>
         </div>
+      )}
+
+      <div>
+        <button
+          onClick={() => setShowSummary((v) => !v)}
+          className="text-xs text-slate-500 hover:text-slate-300"
+        >
+          {showSummary ? "▲ 커뮤니티 해설 접기" : "▼ 커뮤니티 스타일 해설 보기"}
+        </button>
+        {showSummary && (
+          <p className="mt-2 text-sm text-slate-300 whitespace-pre-line leading-relaxed">
+            {result.vibe_adjusted_summary}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReplyTab({
+  onRequest,
+  replyResult,
+  replyLoading,
+}: {
+  onRequest: (mode: ReplyMode) => void;
+  replyResult: ReplyResult | null;
+  replyLoading: boolean;
+}) {
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text).catch(() => undefined);
+    chrome.runtime.sendMessage({ kind: "insert_back", text });
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="grid grid-cols-3 gap-2">
+        {REPLY_MODES.map(({ mode, label }) => (
+          <button
+            key={mode}
+            onClick={() => onRequest(mode)}
+            disabled={replyLoading}
+            className="py-2 rounded text-xs font-medium bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {replyLoading && (
+        <div className="flex items-center gap-2 text-slate-400 text-sm">
+          <div className="w-3 h-3 border-2 border-slate-500 border-t-blue-400 rounded-full animate-spin" />
+          <span>댓글 작성 중…</span>
+        </div>
+      )}
+
+      {replyResult && !replyLoading && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400 font-medium">
+            생성된 댓글 ({REPLY_MODES.find((m) => m.mode === replyResult.reply_mode)?.label})
+          </p>
+          <p className="text-sm text-slate-100 whitespace-pre-line leading-relaxed bg-slate-800 rounded p-3">
+            {replyResult.post}
+          </p>
+          {replyResult.cited_urls.length > 0 && (
+            <ul className="space-y-0.5">
+              {replyResult.cited_urls.map((url, i) => (
+                <li key={i}>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-400 hover:underline"
+                  >
+                    {url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            onClick={() => handleCopy(replyResult.post)}
+            className="w-full py-1.5 rounded text-xs font-semibold bg-blue-700 hover:bg-blue-600 text-white transition-colors"
+          >
+            복사
+          </button>
+        </div>
+      )}
+
+      {!replyResult && !replyLoading && (
+        <p className="text-xs text-slate-500">위 버튼을 눌러 댓글을 생성하세요.</p>
       )}
     </div>
   );
@@ -96,7 +327,6 @@ export function SwordCard({ result }: { result: SwordResult }) {
 
   function handleCopy() {
     navigator.clipboard.writeText(final_post).catch(() => undefined);
-    // Also signal the content script to insert the text back.
     chrome.runtime.sendMessage({ kind: "insert_back", text: final_post });
   }
 
@@ -107,20 +337,20 @@ export function SwordCard({ result }: { result: SwordResult }) {
         <span className="text-xs text-slate-500 ml-auto">{result.vibe_used.display_name}</span>
       </div>
 
-      {/* 4-axis scores */}
       <div className="grid grid-cols-2 gap-2">
-        {(Object.entries(axes) as [string, { value: number; rationale: string }][]).map(([key, axis]) => (
-          <div key={key} className="bg-slate-800 rounded p-2 space-y-0.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">{AXIS_LABEL[key] ?? key}</span>
-              <span className="text-xs font-semibold text-blue-300">{axis.value}/10</span>
+        {(Object.entries(axes) as [string, { value: number; rationale: string }][]).map(
+          ([key, axis]) => (
+            <div key={key} className="bg-slate-800 rounded p-2 space-y-0.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400">{AXIS_LABEL[key] ?? key}</span>
+                <span className="text-xs font-semibold text-blue-300">{axis.value}/10</span>
+              </div>
+              <p className="text-xs text-slate-500 line-clamp-2">{axis.rationale}</p>
             </div>
-            <p className="text-xs text-slate-500 line-clamp-2">{axis.rationale}</p>
-          </div>
-        ))}
+          ),
+        )}
       </div>
 
-      {/* Per-line critique */}
       {line_critique.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs text-slate-400 font-medium">라인 피드백</p>
@@ -135,7 +365,6 @@ export function SwordCard({ result }: { result: SwordResult }) {
         </div>
       )}
 
-      {/* Final post — the main output */}
       <div className="space-y-2">
         <p className="text-xs text-slate-400 font-medium">완성된 글</p>
         <p className="text-sm text-slate-100 whitespace-pre-line leading-relaxed bg-slate-800 rounded p-3">

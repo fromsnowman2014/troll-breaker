@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { create } from "zustand";
 import { ResultCard, SwordCard, LoadingCard, ErrorCard } from "./ResultCard.js";
 import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
+import type { ReplyResult } from "../lib/schemas/reply.js";
 import type { AppError } from "../lib/schemas/errors.js";
 import "./index.css";
 
@@ -11,18 +12,30 @@ type AppErrorObj = { code: AppError["code"]; message: string };
 type PanelState =
   | { phase: "idle" }
   | { phase: "loading"; request_id: string }
-  | { phase: "shield"; result: ShieldResult }
+  | { phase: "shield" }
   | { phase: "sword"; result: SwordResult }
   | { phase: "error"; error: AppErrorObj };
 
 type PanelStore = {
   state: PanelState;
+  shieldResult: ShieldResult | null;
+  replyResult: ReplyResult | null;
+  replyLoading: boolean;
   set: (s: PanelState) => void;
+  setShield: (r: ShieldResult) => void;
+  setReply: (r: ReplyResult | null) => void;
+  setReplyLoading: (v: boolean) => void;
 };
 
 const usePanel = create<PanelStore>((set) => ({
   state: { phase: "idle" },
+  shieldResult: null,
+  replyResult: null,
+  replyLoading: false,
   set: (s) => set({ state: s }),
+  setShield: (r) => set({ shieldResult: r }),
+  setReply: (r) => set({ replyResult: r }),
+  setReplyLoading: (v) => set({ replyLoading: v }),
 }));
 
 type ChromeMessage =
@@ -31,26 +44,52 @@ type ChromeMessage =
   | { kind: "shield/error"; request_id: string; error: AppErrorObj }
   | { kind: "sword/loading"; request_id: string }
   | { kind: "sword/result"; request_id: string; payload: SwordResult }
-  | { kind: "sword/error"; request_id: string; error: AppErrorObj };
+  | { kind: "sword/error"; request_id: string; error: AppErrorObj }
+  | { kind: "reply/loading"; request_id: string }
+  | { kind: "reply/result"; request_id: string; payload: ReplyResult }
+  | { kind: "reply/error"; request_id: string; error: AppErrorObj };
 
 function useChromeMessages() {
-  const setPanel = usePanel((s) => s.set);
+  const store = usePanel();
+
   useEffect(() => {
     const listener = (msg: ChromeMessage) => {
-      if (msg.kind === "shield/loading" || msg.kind === "sword/loading") {
-        setPanel({ phase: "loading", request_id: msg.request_id });
-      } else if (msg.kind === "shield/result") {
-        setPanel({ phase: "shield", result: msg.payload });
-      } else if (msg.kind === "shield/error" || msg.kind === "sword/error") {
-        setPanel({ phase: "error", error: msg.error });
-      } else if (msg.kind === "sword/result") {
-        setPanel({ phase: "sword", result: msg.payload });
+      switch (msg.kind) {
+        case "shield/loading":
+          store.set({ phase: "loading", request_id: msg.request_id });
+          store.setShield(null as unknown as ShieldResult);
+          store.setReply(null);
+          store.setReplyLoading(false);
+          break;
+        case "sword/loading":
+          store.set({ phase: "loading", request_id: msg.request_id });
+          break;
+        case "shield/result":
+          store.setShield(msg.payload);
+          store.setReply(null);
+          store.set({ phase: "shield" });
+          break;
+        case "shield/error":
+        case "sword/error":
+        case "reply/error":
+          store.set({ phase: "error", error: msg.error });
+          store.setReplyLoading(false);
+          break;
+        case "sword/result":
+          store.set({ phase: "sword", result: msg.payload });
+          break;
+        case "reply/loading":
+          store.setReplyLoading(true);
+          store.setReply(null);
+          break;
+        case "reply/result":
+          store.setReplyLoading(false);
+          store.setReply(msg.payload);
+          break;
       }
     };
     chrome.runtime.onMessage.addListener(listener);
 
-    // Tell the service worker we're ready to receive messages.
-    // Also triggers delivery of any result that completed before we mounted.
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tabId = tabs[0]?.id;
       if (tabId !== undefined) {
@@ -59,20 +98,17 @@ function useChromeMessages() {
     });
 
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, [setPanel]);
+  }, [store]);
 }
 
 function App() {
   useChromeMessages();
-  const state = usePanel((s) => s.state);
+  const { state, shieldResult, replyResult, replyLoading } = usePanel();
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <header className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
         <span className="font-bold text-sm tracking-wide text-blue-400">Troll Breaker</span>
-        {state.phase === "shield" && (
-          <span className="text-xs text-slate-500 ml-auto">Truth Check</span>
-        )}
         {state.phase === "sword" && (
           <span className="text-xs text-slate-500 ml-auto">✦ Strike</span>
         )}
@@ -86,7 +122,13 @@ function App() {
           </div>
         )}
         {state.phase === "loading" && <LoadingCard />}
-        {state.phase === "shield" && <ResultCard result={state.result} />}
+        {state.phase === "shield" && shieldResult && (
+          <ResultCard
+            result={shieldResult}
+            replyResult={replyResult}
+            replyLoading={replyLoading}
+          />
+        )}
         {state.phase === "sword" && <SwordCard result={state.result} />}
         {state.phase === "error" && <ErrorCard error={state.error} />}
       </main>

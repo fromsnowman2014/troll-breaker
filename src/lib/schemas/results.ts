@@ -2,6 +2,7 @@ import { z } from "zod";
 import { FactResultSchema } from "./fact.js";
 import { FallacySchema } from "./fallacy.js";
 import { EvalScoreSchema } from "./evaluator.js";
+import { InterpretResultSchema } from "./interpret.js";
 
 const PipelineSchema = z.enum(["fast", "standard", "deep"]);
 
@@ -15,6 +16,7 @@ export const ShieldResultSchema = z.object({
   pipeline: PipelineSchema,
   vibe_used: VibeUsedSchema,
   claim_excerpt: z.string().max(200),
+  interpretation: InterpretResultSchema.optional(),
   fact: FactResultSchema,
   fallacies: z.array(FallacySchema),
   vibe_adjusted_summary: z.string().min(1),

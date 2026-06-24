@@ -7,14 +7,24 @@ import {
   type VibeDeps,
 } from "../agents/vibe.js";
 import { scoreAndCritique, type EvaluatorDeps } from "../agents/evaluator.js";
+import { interpretText, type InterpretDeps } from "../agents/interpret.js";
+import { generateReply, type ReplyDeps } from "../agents/reply.js";
 import type { FactResult, Source } from "../lib/schemas/fact.js";
 import type { Fallacy } from "../lib/schemas/fallacy.js";
 import type { Pipeline, ShieldResult, SwordResult } from "../lib/schemas/results.js";
 import type { VibeProfile } from "../lib/schemas/vibe.js";
+import type { InterpretResult } from "../lib/schemas/interpret.js";
+import type { ReplyResult, ReplyMode } from "../lib/schemas/reply.js";
 import { AppError } from "../lib/schemas/errors.js";
 import type { UrlFetcher } from "../lib/fetch/proxy.js";
 
-export interface OrchestratorDeps extends FactDeps, LogicDeps, VibeDeps, EvaluatorDeps {
+export interface OrchestratorDeps
+  extends FactDeps,
+    LogicDeps,
+    VibeDeps,
+    EvaluatorDeps,
+    InterpretDeps,
+    ReplyDeps {
   /** Optional: fetches page content for inline URLs found in selected text. */
   fetcher?: UrlFetcher;
 }
@@ -62,8 +72,13 @@ export async function runShield(
   const fallaciesPromise = pipeline === "fast"
     ? Promise.resolve<Fallacy[]>([])
     : safeFallacies(deps, req.selected_text, vibe);
+  const interpretPromise = safeInterpret(deps, req.selected_text, vibe);
 
-  const [fact, fallacies] = await Promise.all([factPromise, fallaciesPromise]);
+  const [fact, fallacies, interpretation] = await Promise.all([
+    factPromise,
+    fallaciesPromise,
+    interpretPromise,
+  ]);
 
   const compose = composeShieldNarrative(fact, fallacies);
   const vibeAdjusted = await rewriteInVibe(deps, compose, vibe);
@@ -73,6 +88,7 @@ export async function runShield(
     pipeline,
     vibe_used: { site_id: vibe.site_id, display_name: vibe.display_name },
     claim_excerpt: req.selected_text.slice(0, 200),
+    interpretation,
     fact,
     fallacies,
     vibe_adjusted_summary: vibeAdjusted,
@@ -165,6 +181,18 @@ async function safeFallacies(
   }
 }
 
+async function safeInterpret(
+  deps: OrchestratorDeps,
+  text: string,
+  vibe: VibeProfile,
+): Promise<InterpretResult | undefined> {
+  try {
+    return await interpretText(deps, { text, vibe });
+  } catch {
+    return undefined;
+  }
+}
+
 function unverifiedFactStub(claim: string, reason: string): FactResult {
   return {
     claim,
@@ -220,6 +248,31 @@ export async function runSword(
     score: { ...score, final_post: finalPost },
     generated_at: new Date().toISOString(),
   };
+}
+
+// ---------- Reply ----------
+
+export interface ReplyRequest {
+  request_id: string;
+  original_text: string;
+  fact_summary?: string;
+  sources?: Source[];
+  reply_mode: ReplyMode;
+  page_url: string;
+}
+
+export async function runReply(
+  deps: OrchestratorDeps,
+  req: ReplyRequest,
+): Promise<ReplyResult> {
+  const vibe = await getSiteVibe(deps, req.page_url);
+  return generateReply(deps, {
+    original_text: req.original_text,
+    fact_summary: req.fact_summary,
+    sources: req.sources,
+    reply_mode: req.reply_mode,
+    vibe,
+  });
 }
 
 // ---------- Chat refinement ----------

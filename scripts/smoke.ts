@@ -21,7 +21,7 @@ import { InMemoryKv } from "../src/lib/storage/memory.js";
 import { makeSeedLoader, isSkeleton } from "../src/lib/seeds/index.js";
 import { nodeFsRawLoader } from "../src/lib/seeds/node.js";
 import { ProxyFetcher } from "../src/lib/fetch/proxy.js";
-import { runShield, runSword } from "../src/background/orchestrator.js";
+import { runShield, runSword, runReply } from "../src/background/orchestrator.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SEEDS_DIR = resolve(REPO_ROOT, "extension/seeds");
@@ -87,6 +87,26 @@ https://n.news.naver.com/mnews/article/025/0003532654?sid=102
 
   console.log("\n=== ShieldResult ===");
   console.log(JSON.stringify(shield, null, 2));
+
+  // Validate interpretation field
+  if (shield.interpretation) {
+    console.log("\n[smoke] ✓ interpretation present:", shield.interpretation.glossary.length, "glossary entries");
+  } else {
+    console.warn("\n[smoke] ⚠ interpretation missing (safeInterpret failed silently)");
+  }
+
+  console.log("\n[smoke] Running Reply (mock mode)…");
+  const reply = await runReply(deps, {
+    request_id: "smoke-reply-1",
+    original_text: REAL_CASE,
+    fact_summary: shield.fact.summary,
+    sources: shield.fact.sources,
+    reply_mode: "mock",
+    page_url: "https://www.fmkorea.com/best",
+  });
+
+  console.log("\n=== ReplyResult ===");
+  console.log(JSON.stringify(reply, null, 2));
 
   console.log("\n[smoke] Running Sword…");
   const sword = await runSword(deps, {

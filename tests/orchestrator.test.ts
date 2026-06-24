@@ -36,16 +36,33 @@ describe("pickPipeline", () => {
 describe("runShield", () => {
   it("fast pipeline skips logic and runs fact + rewrite", async () => {
     const llm = new MockLlm();
-    // Fact emit
-    llm.enqueue(() =>
-      emitToolCall("emit_result", {
+    // Fact emit (parallel with interpret)
+    llm.enqueue((req) => {
+      const isInterpret = req.system.includes("커뮤니티 언어 전문가");
+      if (isInterpret) {
+        return emitToolCall("emit_result", { plain_text: "해석된 글", glossary: [] });
+      }
+      return emitToolCall("emit_result", {
         claim: "주장 X",
         verdict: "partial",
         summary: "일부 사실",
         sources: [fixtureSources[0]],
         confidence: 0.6,
-      }),
-    );
+      });
+    });
+    llm.enqueue((req) => {
+      const isInterpret = req.system.includes("커뮤니티 언어 전문가");
+      if (isInterpret) {
+        return emitToolCall("emit_result", { plain_text: "해석된 글", glossary: [] });
+      }
+      return emitToolCall("emit_result", {
+        claim: "주장 X",
+        verdict: "partial",
+        summary: "일부 사실",
+        sources: [fixtureSources[0]],
+        confidence: 0.6,
+      });
+    });
     // Rewrite chat (plain text)
     llm.enqueueText("팩트는 이거임 ㅇㅇ");
 
@@ -68,12 +85,13 @@ describe("runShield", () => {
   it("standard pipeline runs fact + logic + rewrite", async () => {
     const longClaim = "주장 X. " + "긴 본문 ".repeat(200);
     const llm = new MockLlm();
-    // Both fact and logic structured calls + rewrite — order between fact/logic is
-    // not deterministic (Promise.all), so accept either order via a request-aware responder.
-    llm.enqueue((req) => {
+    // fact, logic, interpret run in parallel — accept any order
+    const shieldResponder = (req: Parameters<typeof emitToolCall>[1] extends infer _U ? any : never) => {
       const toolName = req.tools?.[0]?.name ?? "emit_result";
-      const isFact = req.system.includes("fact-check");
-      if (isFact) {
+      if (req.system.includes("커뮤니티 언어 전문가")) {
+        return emitToolCall(toolName, { plain_text: "표준어로 해석", glossary: [] });
+      }
+      if (req.system.includes("fact-check")) {
         return emitToolCall(toolName, {
           claim: longClaim,
           verdict: "true",
@@ -83,21 +101,10 @@ describe("runShield", () => {
         });
       }
       return emitToolCall(toolName, { fallacies: [] });
-    });
-    llm.enqueue((req) => {
-      const toolName = req.tools?.[0]?.name ?? "emit_result";
-      const isFact = req.system.includes("fact-check");
-      if (isFact) {
-        return emitToolCall(toolName, {
-          claim: longClaim,
-          verdict: "true",
-          summary: "ok",
-          sources: [fixtureSources[0]],
-          confidence: 0.8,
-        });
-      }
-      return emitToolCall(toolName, { fallacies: [] });
-    });
+    };
+    llm.enqueue(shieldResponder);
+    llm.enqueue(shieldResponder);
+    llm.enqueue(shieldResponder);
     llm.enqueueText("리라이트 결과");
 
     const deps = baseDeps(llm);
@@ -116,8 +123,18 @@ describe("runShield", () => {
 
   it("degrades to unverified when fact call throws", async () => {
     const llm = new MockLlm();
-    // Fact attempt → structured call expects a responder; we throw inside it.
-    llm.enqueue(() => {
+    // fact throws, interpret succeeds (parallel — either can run first)
+    llm.enqueue((req: any) => {
+      if (req.system.includes("커뮤니티 언어 전문가")) {
+        return emitToolCall("emit_result", { plain_text: "해석", glossary: [] });
+      }
+      throw new Error("fact path down");
+    });
+    // Second parallel slot (interpret or fact retry)
+    llm.enqueue((req: any) => {
+      if (req.system.includes("커뮤니티 언어 전문가")) {
+        return emitToolCall("emit_result", { plain_text: "해석", glossary: [] });
+      }
       throw new Error("fact path down");
     });
     // structuredChat retries once on parse fail, but here we throw synchronously

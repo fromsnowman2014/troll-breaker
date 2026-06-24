@@ -4,9 +4,10 @@ import { ProxyFetcher } from "../lib/fetch/proxy.js";
 import { ChromeKvStore } from "../lib/storage/chrome.js";
 import { makeSeedLoader } from "../lib/seeds/index.js";
 import { extensionRawLoader } from "../lib/seeds/extension.js";
-import { runShield, runSword } from "./orchestrator.js";
+import { runShield, runSword, runReply } from "./orchestrator.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
+import type { ReplyResult, ReplyMode } from "../lib/schemas/reply.js";
 
 const PROXY_URL = "https://troll-breaker.vercel.app/api/chat";
 const SEARCH_PROXY_URL = "https://troll-breaker.vercel.app/api/search";
@@ -27,7 +28,9 @@ type PendingResult =
   | { kind: "shield/result"; request_id: string; payload: ShieldResult }
   | { kind: "shield/error"; request_id: string; error: { code: string; message: string } }
   | { kind: "sword/result"; request_id: string; payload: SwordResult }
-  | { kind: "sword/error"; request_id: string; error: { code: string; message: string } };
+  | { kind: "sword/error"; request_id: string; error: { code: string; message: string } }
+  | { kind: "reply/result"; request_id: string; payload: ReplyResult }
+  | { kind: "reply/error"; request_id: string; error: { code: string; message: string } };
 
 const pendingByTab = new Map<number, PendingResult>();
 
@@ -82,6 +85,32 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       };
       chrome.runtime.sendMessage(out).catch(() => {
         pendingByTab.set(tabId, out);
+      });
+    });
+});
+
+// Side panel sends this when user clicks a reply mode button.
+chrome.runtime.onMessage.addListener((msg, _sender) => {
+  if (msg?.kind !== "reply/request") return;
+  const requestId: string = msg.request_id ?? `reply-${Date.now()}`;
+  const deps = buildDeps();
+  runReply(deps, {
+    request_id: requestId,
+    original_text: msg.original_text ?? "",
+    fact_summary: msg.fact_summary,
+    sources: msg.sources,
+    reply_mode: (msg.reply_mode ?? "mock") as ReplyMode,
+    page_url: msg.page_url ?? "",
+  })
+    .then((result) => {
+      chrome.runtime.sendMessage({ kind: "reply/result", request_id: requestId, payload: result });
+    })
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      chrome.runtime.sendMessage({
+        kind: "reply/error",
+        request_id: requestId,
+        error: { code: "unknown", message },
       });
     });
 });
