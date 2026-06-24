@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-24 (URL fetch proxy for inline link fact-checking)
+> Last updated: 2026-06-24 (Phase 3: Interpret + Reply agents, 3-tab side panel)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -50,16 +50,18 @@
   - `logic.ts` — `detectFallacies(deps, {text, vibe?}) → Fallacy[]`; filters hallucinated spans
   - `vibe.ts` — `getSiteVibe(deps, url)`, `rewriteInVibe(deps, text, vibe, opts)`, `finalizeConceptPost(deps, input)`, `urlToSiteId(url)`
   - `evaluator.ts` — `scoreAndCritique(deps, {draft, vibe}) → EvalScore`; PRD §5 4-axis rubric
+  - `interpret.ts` — `interpretText(deps, {text, vibe?}) → InterpretResult`; translates slang/abbreviations to standard Korean
+  - `reply.ts` — `generateReply(deps, {original_text, fact_summary?, sources?, reply_mode, vibe}) → ReplyResult`; 5 modes: attack/defend/agree/mock/humor
 - `src/background/`
   - `service_worker.ts` — MV3 service worker entry; registers "Truth Check" context menu; handles `sword/request` from content script; calls `runShield`/`runSword`; opens side panel; routes results via `chrome.runtime.sendMessage` + `pendingByTab` fallback
-  - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`; extracts inline HTTPS URLs from selected text, fetches content via `fetcher`, injects as `additionalSources`
+  - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `runReply`, `pickPipeline(text)`; Shield runs fact+fallacy+interpret in parallel; `runReply(deps, {original_text, reply_mode, ...}) → ReplyResult`
 - `src/content/`
   - `content_script.ts` — injects "✦ Strike" floating button into `<textarea>` and `[contenteditable]`; sends `sword/request` on click; listens for `insert_back` to write `final_post` back into last focused textarea; `MutationObserver` for dynamic elements
 - `src/sidepanel/`
   - `index.html` — React root HTML
   - `index.css` — Tailwind base styles
-  - `app.tsx` — Zustand store (`PanelState`); `chrome.runtime.onMessage` listener; renders Shield/Sword/Loading/Error cards; `PanelState` includes `{ phase: "sword"; result: SwordResult }`
-  - `ResultCard.tsx` — `ResultCard({result: ShieldResult})`, `SwordCard({result: SwordResult})` (axes, line_critique, final_post, 복사 button), `LoadingCard()`, `ErrorCard({error})`
+  - `app.tsx` — Zustand store (`PanelStore`); tracks `shieldResult`, `replyResult`, `replyLoading`; handles all chrome messages including `reply/loading|result|error`
+  - `ResultCard.tsx` — `ResultCard({result, replyResult, replyLoading})`: 3-tab UI (해석/팩트체크/댓글 작성); `SwordCard`, `LoadingCard`, `ErrorCard`; reply tab has 5 mode buttons → `chrome.runtime.sendMessage({kind:"reply/request",...})`
 - `src/options/`
   - `index.html` — options HTML
   - `app.tsx` — minimal options page (no key entry UI)
@@ -76,16 +78,20 @@
 - `Source { title, url (HTTPS only), publisher?, published_at?, snippet }`
 - `Fallacy { type: FallacyType, span (verbatim), explanation, counter_punch }`
 - `EvalScore { axes: {cynicism, fact, punchline, vibe}, line_critique: LineNote[], final_post, needs_verification }`
-- `ShieldResult { request_id, pipeline, vibe_used, claim_excerpt, fact, fallacies, vibe_adjusted_summary, generated_at }`
+- `InterpretResult { plain_text: string, glossary: {original, normalized, note?}[] }` — slang→standard translation
+- `ReplyResult { reply_mode: ReplyMode, post: string, cited_urls: string[] }`
+- `ReplyMode = "attack" | "defend" | "agree" | "mock" | "humor"`
+- `ShieldResult { request_id, pipeline, vibe_used, claim_excerpt, interpretation?, fact, fallacies, vibe_adjusted_summary, generated_at }`
 - `SwordResult { request_id, pipeline, vibe_used, score, generated_at }`
 - `Pipeline = "fast" | "standard" | "deep"`
 
 ## Cross-module contracts
 
-- Shield flow: `orchestrator.runShield → vibe.getSiteVibe → parallel(fact.verifyFactWithLinks, logic.detectFallacies) → vibe.rewriteInVibe`
-  - Fast mode skips `logic.detectFallacies`.
-  - Fact failure → `unverifiedFactStub` in `orchestrator.ts`; rewrite still proceeds.
+- Shield flow: `orchestrator.runShield → vibe.getSiteVibe → parallel(fact.verifyFactWithLinks, logic.detectFallacies, interpret.interpretText) → vibe.rewriteInVibe`
+  - Fast mode skips `logic.detectFallacies`. `interpretText` always runs (best-effort, failure → `interpretation: undefined`).
+  - Fact failure → `unverifiedFactStub` in `orchestrator.ts`; rewrite + interpret still proceed.
 - Sword flow: `orchestrator.runSword → vibe.getSiteVibe → evaluator.scoreAndCritique → (standard+) vibe.finalizeConceptPost`
+- Reply flow: side panel button → `chrome.runtime.sendMessage(reply/request)` → service worker `runReply` → `vibe.getSiteVibe` → `reply.generateReply` → `reply/result`
 - Refine flow: `orchestrator.runRefine → vibe.rewriteInVibe(extraInstruction, conversationHistory)`
 - Pipeline selection: `pickPipeline(text)` — `length > 500 chars → standard`, else `fast`. `deep` is callers-opt-in only.
 - MCP-style tools exposed to model (definitions only): `agents/tools.ts → toolDefs`. Handlers are wired by orchestrator at call time (see AGENT_DESIGN.md §4).
