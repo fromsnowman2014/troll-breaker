@@ -20,24 +20,21 @@ This is a **proposal**. Each choice has a "decision required" flag where the own
 
 ## 2. LLM provider
 
-**Choice for v0:** Anthropic (Claude). Adapter pattern so we can add OpenAI / Gemini later without rewriting agent code.
+**Choice for v0:** **TheGrid** (https://thegrid.ai) accessed via our Vercel proxy. TheGrid is an OpenAI-compatible gateway that routes to multiple frontier providers based on `model` name ("instrument"). One key, one billing relationship, many underlying providers.
 
-| Why Claude as default | Tradeoff |
+| Why TheGrid | Tradeoff |
 |---|---|
-| Strong Korean output quality; competitive at sarcasm/tone matching. | Slightly higher latency than GPT-4o-mini on small prompts. |
-| Tool use is well-specified — fits the MCP-style tool pattern in PRD §4. | Caching API requires care (5-min TTL); design prompts to maximize cache hits — see [`PROMPT_GUIDELINES.md`](./PROMPT_GUIDELINES.md) §5. |
-| Structured output via tool-calling is reliable. | We pay per-token. BYOK means the user pays, so the design constraint is to *minimize token waste*, not raw cost. |
+| OpenAI-compatible Chat Completions API — adapter is small. | Tool-calling support depends on the underlying provider TheGrid routes to; our adapter has a JSON-content fallback. |
+| Multiple instrument tiers (`text-standard` / `text-prime` / `text-max` / `agent-prime`) for cost/quality trade-off. | Pricing changes as TheGrid adjusts routing — monitor monthly. |
+| Single key held by us; no BYOK friction for end users. | We pay every token. Abuse risk if proxy is unrate-limited. |
 
-**Adapter layer:** `src/lib/llm/` exposes a single `chat({ system, messages, tools?, schema? })` interface. Provider-specific code is behind it.
+**Adapter layer:** `src/lib/llm/` exposes a single `chat({ system, messages, tools?, schema? })` interface. `TheGridLlm` is the only concrete implementation today (besides `MockLlm` for tests).
 
-**Decision required:** confirm Anthropic as default. If owner prefers a multi-provider chooser in v0, scope grows ~1 sprint.
+**Key holding:** the secret (`THEGRID_API_KEY`) lives in Vercel env vars. The extension calls `/api/chat` on `troll-breaker-browser.vercel.app` and never sees the key. See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md).
 
 **Model defaults (proposed):**
-- Fast tier (vibe rewrite, chat refinement): `claude-haiku-4-5` — cheap, fast, good Korean.
-- Reasoning tier (logic critique, evaluator, fact summarize): `claude-sonnet-4-6`.
-- Power mode opt-in: `claude-opus-4-7` for "deep analyze".
-
-User can override per-tier in the options page.
+- All tiers: `text-prime` initially (matches the THEGRID curl example; quality≥38).
+- Future: route vibe rewrites to `text-standard` (~3× cheaper) and force-tool agents to `agent-prime` once we measure quality on each.
 
 ## 3. Search / fact-check provider
 
@@ -69,9 +66,9 @@ No animations library, no router (single-page panel), no i18n framework yet (Kor
 
 ## 6. Storage
 
-- `chrome.storage.local` for: API keys, user preferences, vibe profile cache, seed-corpus overrides.
+- `chrome.storage.local` for: user preferences, vibe profile cache, seed-corpus overrides. **No secrets.**
 - `IndexedDB` (via `idb-keyval` — tiny wrapper) for: fact-check memo, larger best-post samples.
-- **Never `chrome.storage.sync`** for any field — sync would replicate secrets across the user's devices via Google's cloud.
+- `chrome.storage.sync` is unused. No secrets means no sync-leak risk, but we also don't need cross-device sync for preferences yet.
 
 ## 7. Build / dev / test
 
@@ -90,15 +87,16 @@ No animations library, no router (single-page panel), no i18n framework yet (Kor
 
 ## 9. What we are explicitly NOT using (yet)
 
-- **No backend server.** All API calls are direct from the extension. Adding a backend means provisioning, secrets, ops, and an abuse vector. Worth it only if we add shared features (community-curated vibe profiles, paid tier).
+- **Minimal backend (Vercel proxy only).** Single `/api/chat` function that forwards to TheGrid with the operator's key. No database, no auth, no analytics. Stateless. Anything beyond key-holding gets reconsidered case-by-case.
 - **No analytics SDK.** Privacy default. If we add anything, it's opt-in and self-hosted (Plausible or Umami).
 - **No CRDT / sync.** Single-device per install. Revisit if users ask.
 - **No vector DB.** Vibe profiles are small; few-shot examples fit in a prompt directly. Don't introduce embeddings until they pay for themselves.
 
 ## 10. Open tech questions
 
-1. Does the Anthropic SDK work cleanly from a Manifest V3 service worker (no `XMLHttpRequest`, fetch-only, no streaming via EventSource)? **Need to verify** before committing.
-2. Does Brave Search API respond fast enough from Korea? **Need to measure** with a smoke test.
+1. Does fetch from a Manifest V3 service worker to our Vercel proxy work end-to-end with CORS? **Need to verify** once the extension shell lands.
+2. Does Brave Search API respond fast enough from Korea? **Need to measure** if/when search is wired through `/api/search`.
 3. Side panel API quirks: does it survive tab switches without losing chat state? **Need to verify** on Chrome stable.
+4. Does TheGrid's `text-prime` reliably honor OpenAI-style `tools` + `tool_choice`? Our `TheGridLlm` adapter has a JSON-content fallback, but we should measure the hit rate on real traffic to decide whether to switch to `agent-prime` for tool-heavy agents.
 
 All three are 30-minute spikes before locking the stack.

@@ -66,24 +66,25 @@ This order matters: role → goal → inputs → constraints → style → schem
 
 Force structured output via the LLM's **tool-use** mechanism, not "respond in JSON" begging. Tool-use is reliably validated; JSON-mode often degrades natural-language quality.
 
-For Anthropic: define a single tool `emit_result` whose `input_schema` is the agent's zod schema (converted via `zod-to-json-schema`). Then `tool_choice: { type: "tool", name: "emit_result" }`. The model's tool input is the structured output.
+In our adapter (`structuredChat` over `TheGridLlm`): define a single tool `emit_result` whose `input_schema` is the agent's zod schema. Set `tool_choice: { type: "tool", name: "emit_result" }`. The model's tool input is the structured output.
+
+**TheGrid caveat:** tool-call support depends on the underlying provider TheGrid routes to. `TheGridLlm` includes a JSON-content fallback (if the response has no `tool_calls` but `content` is valid JSON, synthesize a tool call). The agent layer is unaware of which path fired.
 
 After the call: parse with zod → on failure, retry once with the validation error injected → on second failure, throw.
 
 ## 5. Prompt caching
 
-Anthropic's prompt cache has a 5-minute TTL. **Design prompts so the long, stable part comes first.**
+**Status: deferred.** TheGrid does not currently expose Anthropic-style `cache_control` markers or OpenAI's prompt-caching headers in its OpenAI-compatible API. Until it does, all prompts are sent fresh.
 
-Structure all our prompts as:
+We still **structure** prompts as if caching existed, because the structure is good for readability and will be ready to flip on when TheGrid (or a direct provider adapter) supports it:
+
 ```
-[STABLE]  role + goal + constraints + schema + examples           ← cache_control: ephemeral
-[STABLE]  vibe few-shots for this site                            ← cache_control: ephemeral
-[VOLATILE] today's facts / user input                              ← not cached
+[STABLE]  role + goal + constraints + schema + examples
+[STABLE]  vibe few-shots for this site
+[VOLATILE] today's facts / user input
 ```
 
-Vibe few-shots change daily (when the corpus refreshes) but are stable within a session. Putting them in a separate cache block lets us cache the schema/instructions independently of the per-site corpus.
-
-Concretely: every agent's prompt builder returns a list of content blocks with `cache_control` markers, not a single string.
+Concretely: every agent's prompt builder produces system + user messages in this order. When caching support arrives, we add markers without restructuring prompts.
 
 ## 6. Eval harness
 

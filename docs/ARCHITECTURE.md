@@ -21,16 +21,17 @@ System design for the Truth & Strike Chrome extension. Read [`PRD.md`](./PRD.md)
                                   │
                                   ▼
                         ┌──────────────────┐
-                        │  External APIs   │
-                        │  • LLM (BYOK)    │
-                        │  • Search API    │
-                        │  • (optional)    │
-                        │    seed-corpus   │
-                        │    CDN / repo    │
+                        │ Vercel proxy     │
+                        │ /api/chat        │  ──► THEGRID (LLM)
+                        │ (holds key)      │
                         └──────────────────┘
+                                  │
+                              (search:
+                               BraveSearch — dev smoke only,
+                               not yet wired through proxy)
 ```
 
-**No backend of our own.** All secrets live on the user's machine. All calls go directly from the service worker to third-party APIs. See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md).
+**Minimal backend (key-holding proxy only).** The Vercel proxy at `troll-breaker-browser.vercel.app/api/chat` holds `THEGRID_API_KEY` and forwards chat-completions requests to TheGrid. The extension itself stores no secrets and does not call provider APIs directly. No user data is persisted server-side. See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md).
 
 ## 2. Extension surfaces (Manifest V3)
 
@@ -39,7 +40,7 @@ System design for the Truth & Strike Chrome extension. Read [`PRD.md`](./PRD.md)
 | `background/service_worker.ts` | Orchestrator. Owns API calls, caches, agent pipeline. | Event-driven; suspended when idle. |
 | `content/content_script.ts` | Per-tab DOM access. Captures user selection, injects floating button on textareas, reads page-visible best-posts for opportunistic vibe sampling. | Lives with the tab. |
 | `sidepanel/index.html` + `sidepanel/app.tsx` | Primary result UI + chat-style refinement. Uses Chrome `sidePanel` API. | Open per-tab on demand. |
-| `options/index.html` | BYOK setup, model selection, per-site overrides, seed-corpus management. | User-opened. |
+| `options/index.html` | Preferences, model tier, per-site overrides, seed-corpus management. No key entry. | User-opened. |
 | `manifest.json` | Permissions, MV3 declarations. | Static. |
 
 **Why side panel over popup:** popups close on focus loss, breaking the chat/edit loop. Side panel persists alongside the page the user is debating on. See [`UI_UX_SPEC.md`](./UI_UX_SPEC.md) §2.
@@ -126,7 +127,8 @@ After either result is shown, the side panel hosts a short conversation:
 
 | State | Where it lives | TTL | Notes |
 |---|---|---|---|
-| API keys | `chrome.storage.local` | persistent | never `chrome.storage.sync` (would cross-device sync secrets) |
+| `THEGRID_API_KEY` | Vercel env var (server-side) | persistent | never stored client-side; rotated via Vercel dashboard |
+| User preferences | `chrome.storage.local` | persistent | mode, model tier, whitelist. **No secrets.** |
 | Vibe profile per site | `chrome.storage.local` | 7 days default, user-tunable | see [`VIBE_EXTRACTION.md`](./VIBE_EXTRACTION.md) §5 |
 | Fact-check memo | in-memory + IndexedDB | 24h | keyed by normalized claim hash |
 | Conversation history | side panel state only | session | discarded on panel close — privacy default |
@@ -134,8 +136,8 @@ After either result is shown, the side panel hosts a short conversation:
 
 ## 6. Trust & data boundaries
 
-- The user's **selected text** and **draft** are sent to the configured LLM provider. This is the primary data egress. Make it obvious in UI before first send. See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md) §4.
-- The user's **API key** never leaves `chrome.storage.local` except as an `Authorization` header on outbound LLM calls.
+- The user's **selected text** and **draft** are sent to our Vercel proxy and forwarded to TheGrid. This is the primary data egress. Make it obvious in UI before first send. See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md) §4.
+- The user's prompts pass through *our* Vercel function logs (default retention applies). The proxy itself does not persist user data.
 - The user's **browsing history** is not collected. The extension only knows the URL of the active tab at moments of explicit invocation.
 - No telemetry by default. If we ever add it, opt-in only.
 
@@ -143,8 +145,9 @@ After either result is shown, the side panel hosts a short conversation:
 
 | Failure | Behavior |
 |---|---|
-| No API key configured | First-run flow opens options page; context menu shows "Setup required". |
-| LLM API 5xx / timeout | Retry once with backoff; surface clear error in side panel ("LLM provider unreachable"). |
+| Proxy returns 500 `server_misconfigured` | Operator hasn't set `THEGRID_API_KEY` in Vercel. Side panel shows "Service unavailable — try again later". |
+| Proxy returns 502 `upstream_error` | THEGRID-side error (rate-limited, balance exhausted, model issue). Side panel surfaces the error message verbatim. |
+| LLM API 5xx / timeout | Retry once with backoff; surface clear error in side panel ("Language model unreachable"). |
 | Search API quota exhausted | Fall back to LLM-only fact assertion with a visible "⚠ unverified — no live search" badge. |
 | Site DOM scrape returns nothing | Use bundled seed corpus only; do not block. |
 | User on `chrome://` or extension page | Context menu hidden; floating button not injected. |
@@ -154,8 +157,8 @@ After either result is shown, the side panel hosts a short conversation:
 These need a decision before implementation; flagged so we don't paper over them.
 
 1. **Single-call vs multi-agent.** Multi-agent (PRD §4) is cleaner conceptually but 3–5× the latency and cost. Proposed default: one structured-output call with role sections; multi-agent reserved for "deep analyze" power mode. See [`AGENT_DESIGN.md`](./AGENT_DESIGN.md) §3.
-2. **LLM provider lock-in.** Pick one (Anthropic) for v0 to avoid abstraction tax, or build the adapter from day one. See [`TECH_STACK.md`](./TECH_STACK.md) §2.
-3. **Search provider.** Brave Search vs Google CSE vs LLM-native web search. See [`TECH_STACK.md`](./TECH_STACK.md) §3.
+2. **Model tier policy on THEGRID.** Single `text-prime` for everything vs task-specific routing (`text-standard` for vibe rewrites, `agent-prime` for tool-heavy structured calls). Cost vs quality trade-off.
+3. **Search provider.** Brave is wired for the dev smoke runner. Decide whether to add `/api/search` proxy for the production extension or keep Fact mode LLM-only initially.
 4. **Korean site DOM stability.** fmkorea / dcinside / theqoo / ruliweb each have unique markup and anti-bot quirks. Owner needs to capture per-site selector kits — see [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md) §3.
 
 ## 9. Performance targets (informational, pre-MVP)

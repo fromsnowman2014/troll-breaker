@@ -27,8 +27,8 @@ Out of scope: any agent logic, any LLM call, any real UI.
 In-scope:
 - Context menu "Truth Check" wired through service worker → orchestrator.
 - Single-call **Fast pipeline** only (see [`AGENT_DESIGN.md`](./AGENT_DESIGN.md) §3).
-- Anthropic LLM adapter, Brave Search adapter.
-- BYOK options page (LLM key + Search key).
+- TheGrid LLM adapter (via Vercel proxy `/api/chat`). Brave Search adapter (dev smoke only for now).
+- Options page: preferences and per-site whitelist only. **No key entry.**
 - Side panel shows a minimal result card (verdict, summary, 1–3 sources).
 - Bundled seed corpus for **one** site only (pick the owner's home community).
 - Generic Korean cynical fallback profile for everything else.
@@ -138,8 +138,9 @@ Things worth doing eventually but not the critical path:
 - **Shared vibe profiles.** Community curation with moderation. Needs a backend, abuse mitigation. Big project.
 - **Usage dashboard.** Per-request cost / token counts surfaced to the user.
 - **Conversation history persistence.** Currently session-only by design.
-- **Provider abstraction beyond Anthropic.** OpenAI + Gemini adapters.
-- **Hosted demo key.** Rate-limited trial path so onboarding isn't blocked by API key setup. Costs us money; defer.
+- **Provider abstraction beyond TheGrid.** Direct Anthropic / OpenAI / Gemini adapters if we hit gateway limits.
+- **Proxy rate limiting** (Vercel KV / Upstash) — add when invocation traffic warrants.
+- **`/api/search` proxy for Brave** so production extension can fact-check without BYOK.
 
 ---
 

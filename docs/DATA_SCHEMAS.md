@@ -160,8 +160,7 @@ SwordResult {
 
 | Key | Shape | Notes |
 |---|---|---|
-| `secrets` | `{ llm: {provider, key_encrypted}, search: {provider, key_encrypted} }` | See [`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md) §3. |
-| `prefs` | `Preferences` (see below) | User-tunable settings. |
+| `prefs` | `Preferences` (see below) | User-tunable settings. **No secrets are stored.** API key lives server-side ([`API_KEY_SECURITY.md`](./API_KEY_SECURITY.md)). |
 | `vibe:<site_id>` | `VibeProfile` | One per site. |
 | `vibe:overrides:<site_id>` | `Partial<VibeProfile>` | User edits layered over the bundled profile at read time. |
 | `whitelist:hosts` | `string[]` | Hosts where the floating button injects. |

@@ -1,123 +1,109 @@
-# API Key Security & BYOK
+# Server-Side Key Architecture
 
-How API keys are entered, stored, transmitted, and revoked. Threat model included.
+How the LLM API key is held, used, and protected. Replaces the previous BYOK model.
 
-We use **BYOK** (Bring Your Own Key) — no backend, no shared secrets, no rate limiting we have to enforce. Every user supplies their own LLM and Search API keys.
+The project operator (you) holds a single `THEGRID_API_KEY` in Vercel environment variables. A small serverless proxy at `/api/chat` adds the key to outbound requests so that **the extension and end users never see, store, or supply a key**.
 
-## 1. Why BYOK
+## 1. Why server-side
 
 | Pro | Con |
 |---|---|
-| Zero backend ops, zero cost for us. | Onboarding friction — users must obtain a key first. |
-| User pays only for what they use, transparently. | We can't offer a "free trial" without becoming the payer. |
-| User's content never traverses our servers — strong privacy story. | We can't enforce rate limits or detect abuse on our side. |
-| Compliance is the user's relationship with the LLM provider. | If the LLM provider's TOS conflicts with our use case, the user (not us) is in violation. |
+| Zero onboarding friction — install and use immediately. | Operator (you) pays all token costs. Real ongoing expense. |
+| User never handles secrets. No key-entry UI, no encryption-at-rest concerns. | Proxy is publicly callable → cost-exhaustion attack surface. Rate-limit when traffic warrants. |
+| Single key to rotate if compromised. | User prompts pass through *our* infrastructure. Privacy disclosures must reflect that. |
+| Simpler Chrome Web Store review (`storage` permission no longer holds secrets). | We are now a data processor under most privacy regimes for the proxy hop. |
 
-For a debate-helper aimed at heavy users, the privacy + cost-transparency wins. Friction is real but addressable via great onboarding (see [`UI_UX_SPEC.md`](./UI_UX_SPEC.md) §9).
+The previous BYOK trade-off (privacy + cost-transparency, at the price of friction) is reversed. We now optimize for adoption.
 
-## 2. Supported keys
+## 2. What gets sent
 
-| Key | Purpose | Default provider | Where to obtain |
-|---|---|---|---|
-| LLM key | All agent calls | Anthropic | console.anthropic.com → API Keys |
-| Search key | Fact agent's source lookup | Brave Search | api.search.brave.com |
-| (future) Custom OpenAI key | Provider override | optional | platform.openai.com |
-
-Owner must document how to obtain each key in the first-run flow. See [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md) §4.
-
-## 3. Storage
-
-```
-chrome.storage.local["secrets"] = {
-  llm: { provider: "anthropic", key: "<encrypted>" }
-  search: { provider: "brave", key: "<encrypted>" }
-}
-```
-
-Rules:
-- **`chrome.storage.local` only.** Never `chrome.storage.sync` — that replicates secrets through Google's cloud across the user's devices.
-- **Encrypted at rest using a key derived from `chrome.runtime.id` + a per-install random salt.** This is *not* strong cryptography (the same code can derive it back), but it stops casual disk inspection and ensures keys can't be lifted from a backup of `chrome.storage` JSON in plaintext. Mention this honestly in the privacy policy.
-- **Never logged.** A linter rule forbids `console.log(secrets.*)`. Service worker never serializes the secrets object into errors or telemetry.
-
-## 4. Transmission
-
-Every outbound call is **directly** from the service worker to the third-party API. No proxy, no analytics tap, no intermediate.
-
-```
-service_worker → https://api.anthropic.com/v1/messages    [Authorization: Bearer <key>]
-service_worker → https://api.search.brave.com/...         [X-Subscription-Token: <key>]
-```
-
-Rules:
-- All transport is HTTPS.
-- The key is set in headers only. Never in query strings, never in request bodies.
-- The `host_permissions` in `manifest.json` is the **narrowest set** of API hosts we actually call. Reviewers can audit it.
-- We **do not** make calls to any other domain from the service worker, ever. Content scripts may read DOM but do not make outbound network calls.
-
-## 5. What gets sent to the LLM
-
-This is the data-egress moment users should understand.
+This is the data-egress moment users should understand and that the privacy policy must disclose.
 
 | Sent | Not sent |
 |---|---|
 | The selected/draft text the user explicitly triggered on | Browsing history |
 | The page URL (to look up vibe profile) | Anything from other tabs |
-| The vibe few-shots for that URL | API keys for other providers |
-| Search snippets the fact agent retrieved | Cookies, form values not explicitly invoked on |
+| The vibe few-shots for that URL | Cookies, form values not explicitly invoked on |
+| Search snippets the fact agent retrieved | Identifiers tied to the user account or device |
 
-The side panel makes this visible. First-run shows a one-screen consent: "When you invoke Truth Check or Strike Enhance, the selected text + the current page URL go to your configured LLM provider. Nothing else."
+Destination chain: `extension service_worker → our Vercel proxy → https://api.thegrid.ai/v1/chat/completions`.
 
-## 6. Threat model
+The side panel first-run consent screen states this in plain language: "When you invoke Truth Check or Strike Enhance, the selected text and current page URL travel through our server to the underlying language model."
+
+## 3. Storage
+
+The extension stores **no secrets**. `chrome.storage.local` is used only for:
+
+- User preferences (mode, model tier override, whitelisted hosts)
+- Vibe profile cache (TTL: 7 days)
+- Fact-check memo (TTL: 24h)
+
+No key, token, or proxy URL is encrypted — there's nothing to encrypt. The proxy URL is hard-coded in the bundled extension.
+
+## 4. Transmission
+
+```
+service_worker → https://troll-breaker-browser.vercel.app/api/chat   [no auth header]
+proxy          → https://api.thegrid.ai/v1/chat/completions          [Authorization: Bearer $THEGRID_API_KEY]
+```
+
+Rules:
+- All transport is HTTPS.
+- The extension sets only `Content-Type: application/json` — never an auth header.
+- The proxy whitelists request fields (`model`, `messages`, `max_tokens`, `tools`, `tool_choice`) and drops everything else, so callers cannot smuggle params we haven't approved.
+- `max_tokens` is capped at 4000 server-side.
+- The proxy responds with `Access-Control-Allow-Origin: *` (no cookies traverse this boundary; the key is server-side; CORS lockdown gives no real defense beyond rate-limiting).
+- Brave Search currently has no proxy. The production extension will not call search until a separate task adds `/api/search`. The dev smoke runner reads `BRAVE_API_KEY` from `.env` for now.
+
+## 5. Threat model
 
 | Threat | Mitigation |
 |---|---|
-| Malicious page reads the API key via shared `chrome.storage` | Not possible — `chrome.storage.local` is scoped to the extension. Pages have no access. |
-| Malicious page tricks the user into invoking Shield on attacker-crafted text | Worst case: the user spends their own tokens. No privilege escalation. Documented behavior. |
-| Extension update is compromised (supply chain) | Code review on every PR; lock dependencies via `pnpm-lock.yaml`; pin all CDN-like deps. See [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md) §5. |
-| User shares their Chrome profile / a backup leaks `chrome.storage` | Keys are not plaintext; user is informed in the privacy policy. Recommend rotating API keys if a profile is leaked. |
-| Network adversary (untrusted Wi-Fi) | HTTPS only; refuse to call APIs over plain HTTP. |
-| Logging/printing secrets in dev builds | Lint rule + code review. Dev build banner reminds the dev. |
-| User pastes a key into the wrong field (e.g., a chat input) | Options page key field is `type=password` and never auto-fills outside that field. Side panel chat input is plain text — risk is on the user. Add an inline warning if a string matching `sk-…` is detected in chat input. |
-| Phishing extension impersonates us | Out of scope, but: we own a unique store listing, signed by us; users should install only from the Chrome Web Store listing in the README. |
+| Anyone can hit `/api/chat` → cost-exhaustion attack | Monitor Vercel function invocations + THEGRID usage dashboard weekly. Add per-IP rate-limit (Vercel KV or Upstash) when invocations exceed a daily budget. Currently unlimited (acceptable for early operation). |
+| THEGRID key compromised (Vercel logs leak, repo leak) | Revoke at THEGRID dashboard; issue new key; update Vercel env var; redeploy. No client-side change required. |
+| Vercel function logs contain user prompts | Vercel retains function logs by default. Disable verbose request-body logging in `api/chat.ts` (do not `console.log(req.body)`). Disclose retention in the privacy policy. |
+| Malicious request body manipulates THEGRID call | Field whitelist + `max_tokens` cap. No model override beyond `text-*` family (callers can pass `model`, but THEGRID itself only honors valid model IDs). |
+| Extension impersonator points users at a phishing UI | Out of scope. Users should install only from the Chrome Web Store listing. |
+| Malicious page tricks the user into invoking Shield on attacker-crafted text | Worst case: the *operator* spends tokens on garbage. Same blast radius as a normal user invoking it many times. No privilege escalation, no data leak. |
+| Network adversary (untrusted Wi-Fi) | HTTPS only. The proxy is a single hop and uses HSTS via Vercel. |
 
-## 7. Revocation
+## 6. Revocation
 
-If a user's key is compromised:
+If `THEGRID_API_KEY` is compromised:
 
-1. They revoke the key at the provider's dashboard (Anthropic / Brave). That kills usage immediately.
-2. They open the extension's options page → API Keys → "Clear" and enter a new one.
+1. Revoke at https://app.thegrid.ai/profile/api-keys — kills usage immediately.
+2. Issue a new key, paste into Vercel project Settings → Environment Variables for Production / Preview / Development.
+3. Trigger a redeploy (push a new commit, or click "Redeploy" on the dashboard). Env var changes apply to new deployments only.
 
-We do not need a "remote kill switch" — provider revocation is the source of truth.
+End-user installations require no action — they're calling our stable proxy URL, which now holds the new key.
 
-## 8. Privacy policy elements (must exist on store listing)
+## 7. Privacy policy elements (must exist on store listing)
 
 The Chrome Web Store requires a privacy policy URL. The policy must state, at minimum:
 
-1. We do not operate any server. All processing happens in the extension and at third-party APIs the user configures.
-2. The user's selected text, draft text, and current page URL are sent to the user-configured LLM and Search APIs at the moment of explicit invocation.
-3. We store: API keys (encrypted, local only), preferences, vibe profile cache. We do not store user content.
-4. We do not collect analytics or telemetry.
-5. Users can clear all stored data via the options page or by uninstalling the extension.
+1. We operate a small backend (a Vercel-hosted proxy that holds our LLM API key). It does not persist user content beyond Vercel's standard function logs.
+2. When the user invokes Truth Check or Strike Enhance, the selected text and current page URL are sent to our proxy and forwarded to the upstream language model (TheGrid, https://thegrid.ai).
+3. We store on the user's device: preferences and vibe profile cache. No personal data, no analytics, no telemetry.
+4. We do not associate requests with user identity. The proxy does not require sign-in.
+5. Users can clear all locally stored data via the options page or by uninstalling the extension. They cannot delete server-side request logs (the proxy holds no user identifier to delete against).
 
-Owner must publish this at a stable URL before store submission. See [`USER_ACTION_ITEMS.md`](./USER_ACTION_ITEMS.md) §6.
+Operator must publish this at a stable URL before store submission. See `USER_ACTION_ITEMS.md`.
 
-## 9. Chrome Web Store policy compliance
+## 8. Chrome Web Store policy compliance
 
-CWS policies require:
-
-- **Single Purpose:** the extension does one thing. Truth & Strike is a "debate helper" — single purpose, defensible.
-- **Permissions Justification:** every permission must have a one-line justification in the listing. Prepare this in advance:
-  - `contextMenus` — to register the "Truth Check" right-click action.
-  - `storage` — to persist API keys and preferences locally.
-  - `sidePanel` — to render the result UI.
-  - `activeTab` — to read the user's selected text only when they invoke.
-  - `host_permissions` for API hosts — to call the user's configured LLM and Search.
-  - `host_permissions` for whitelisted community sites — to inject the floating button and read DOM for vibe sampling.
+- **Single Purpose:** Truth & Strike is a debate helper. Defensible.
+- **Permissions justification (one-liners for the listing):**
+  - `contextMenus` — register the "Truth Check" right-click action.
+  - `storage` — persist user preferences and the vibe profile cache locally. **No secrets.**
+  - `sidePanel` — render the result UI.
+  - `activeTab` — read the user's selected text only when they invoke.
+  - `host_permissions` for `troll-breaker-browser.vercel.app` — call our proxy.
+  - `host_permissions` for whitelisted community sites — inject the floating button and read DOM for vibe sampling.
 - **Remote code:** we ship no remote JS. All code is bundled.
-- **User data disclosure:** declare in the listing exactly what §5 says.
+- **User data disclosure:** declare in the listing exactly what §7 says.
 
-## 10. Open security questions
+## 9. Open questions
 
-1. **Do we sign requests** with anything beyond the bearer token? Anthropic and Brave don't support request signing, so no.
-2. **Should we offer a "memory-only" mode** where the key isn't persisted at all and must be re-entered each session? Useful for shared computers. Cheap to add post-MVP.
-3. **Hardware-backed key storage** via WebAuthn / passkeys for the encryption key derivation? Overkill for v0; revisit if we get enterprise-style requests.
+1. **Rate-limit policy.** Per-IP daily quota? Per-install token? Decide once we see real traffic.
+2. **Search proxy.** Add `/api/search` for Brave so the production extension can fact-check? Or keep search BYOK-style (user enters their own Brave key) for now?
+3. **Operator cost budget.** Set a monthly spend cap on the THEGRID account before MVP launch. Decide what to do when the cap is hit (degrade to error message vs queue).

@@ -17,7 +17,7 @@ What the user sees, where they click, and how they steer results. This doc answe
 | 1 | **Context menu item** ("Truth Check") | Right-click on selected text | Trigger Shield. |
 | 2 | **Floating button** | When user focuses a textarea / contenteditable | Trigger Sword. |
 | 3 | **Side panel** | After trigger; persists per tab | Show result, chat-refine, insert back. |
-| 4 | **Options page** | User-opened | BYOK setup, model + tier choices, seed corpus management, per-site overrides. |
+| 4 | **Options page** | User-opened | Preferences, model tier choices, seed corpus management, per-site overrides. **No key entry — service is hosted.** |
 
 **Why not a popup?** Popups close on focus loss. The user *must* be able to look back at the page they're debating on without losing the result. Side panel survives focus changes.
 
@@ -172,16 +172,10 @@ In addition to chat:
 Single page, sectioned:
 
 ```
-[API Keys]
-   • LLM provider [dropdown]
-   • API key [password field, masked]
-   • Test connection [button]
-   • (repeated for Search provider)
-
-[Model tiers]
-   • Fast    [model dropdown]   (default: Haiku)
-   • Standard[model dropdown]   (default: Sonnet)
-   • Deep    [model dropdown]   (default: Opus)
+[Model tier]
+   • Fast    [model dropdown]   (default: text-prime)
+   • Standard[model dropdown]   (default: text-prime)
+   • Deep    [model dropdown]   (default: text-prime — agent-prime for tool-heavy)
 
 [Per-site whitelist]
    • [ ] fmkorea.com   — floating button on / off
@@ -217,16 +211,16 @@ Install → toolbar icon appears
 [user clicks toolbar icon]
    ↓
 Side panel opens with a one-screen welcome:
-   • "Truth & Strike needs an LLM API key to work."
-   • [Set up now] → opens options page focused on API Keys section
-   • [Try with demo key] (optional — if we ship a rate-limited demo) — defer to post-MVP
+   • "Truth & Strike rewrites your debate posts in community voice."
+   • One-line privacy disclosure: "Selected text goes to our server → language model. No keys needed."
+   • [Try it] → loads the "examples" view immediately
 ```
 
-After setup, the welcome panel is replaced by an "examples" view: 2 sample Shield invocations the user can run on canned text to feel the product.
+The "examples" view: 2 sample Shield invocations the user can run on canned text to feel the product. No setup gate.
 
 ## 10. Empty & error states
 
-- **No API key:** every trigger surfaces a small banner in the side panel — "API key required → [open settings]". No silent failure.
+- **Service unavailable (proxy 5xx):** every trigger surfaces a small banner — "Service temporarily unavailable. Try again in a minute." No silent failure.
 - **No search results:** Fact section shows "No sources found — verdict is LLM opinion only" with a warning color.
 - **Site not in profile:** Vibe section shows "Generic Korean tone (no community profile for this site)."
 - **Timeout:** "Took too long. [Retry] [Switch to Fast mode]"
@@ -249,7 +243,7 @@ Keyboard shortcuts are configurable via `chrome://extensions/shortcuts`.
 
 ## 13. Open UX questions
 
-1. **Onboarding tone for the BYOK step.** The first thing a user sees is an API key prompt. That kills 30% of installs in similar BYOK tools. Should we offer a hosted demo key with strict rate limits? Cost/abuse risk; defer until first wave of feedback.
+1. **Onboarding privacy disclosure.** Users should see in plain language that their text goes through our server, but the disclosure should not block or scare. One-line in the welcome panel + a "Learn more" link to the privacy policy seems right; A/B test if installs drop.
 2. **Vibe transparency.** Do power users want to *see* the vibe profile that was used for a given rewrite (lexicon list, few-shot titles)? Probably yes — adds trust. Cheap to add as a collapsible "vibe used" section in the result card.
 3. **History.** Do we keep the last N results per tab so the user can revisit? Nice-to-have; defer to v0.1.
 4. **Mobile / tablet.** Chrome on Android does not support extensions in the same way. Out of scope.

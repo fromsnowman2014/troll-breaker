@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-09 (commit pending)
+> Last updated: 2026-06-23 (commit pending)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -13,12 +13,13 @@
   - `results.ts` — `ShieldResultSchema`, `SwordResultSchema`; types `Pipeline`, `ShieldResult`, `SwordResult`
   - `errors.ts` — `AppError`, `AgentTimeoutError`, `SchemaValidationError`; type `AppErrorCode`
   - `index.ts` — re-exports
-- `src/lib/llm/` — provider-agnostic chat adapter
+- `src/lib/llm/` — chat adapter (hits Vercel proxy that holds `THEGRID_API_KEY`)
   - `types.ts` — `LlmClient`, `LlmChatRequest`, `LlmChatResponse`, `LlmToolDef`, `LlmToolCall`, `LlmToolChoice`
   - `mock.ts` — `MockLlm` (queue of responders), `emitToolCall(name, input)`
-  - `anthropic.ts` — `AnthropicLlm` (stub; throws until wired to real API)
-  - `gemini.ts` — `GeminiLlm` (fetch-based; maps tool-use ↔ Gemini functionCall)
+  - `thegrid.ts` — `TheGridLlm` (fetch-based; OpenAI-compatible body; no apiKey in client — proxy adds Bearer server-side)
   - `structured.ts` — `structuredChat(llm, schema, inputSchema, req, agentName)` — tool-use w/ 1 retry
+- `api/` — Vercel serverless functions (deployed to troll-breaker-browser.vercel.app)
+  - `chat.ts` — `POST /api/chat` proxy; whitelists fields, caps max_tokens, adds `Authorization: Bearer $THEGRID_API_KEY` to outbound THEGRID call
 - `src/lib/search/` — search adapter
   - `types.ts` — `SearchClient.searchWeb(query, max?) → Source[]`
   - `mock.ts` — `MockSearch(canned)`
@@ -32,7 +33,7 @@
   - `node.ts` — `nodeFsRawLoader(seedsDir)` — fs.readFile-based, used by smoke runner
 - `extension/seeds/<site_id>.json` — bundled corpora (currently skeletons; USER_ACTION_ITEMS.md §2)
   - fmkorea.com, dcinside.com, theqoo.net, ruliweb.com, ilbe.com
-- `scripts/smoke.ts` — end-to-end runner against a real LLM provider (USER_ACTION_ITEMS.md §9 dogfood)
+- `scripts/smoke.ts` — end-to-end runner; calls the deployed Vercel proxy (or `PROXY_URL` override) for LLM
 - `docs/site-extractors/<site_id>.md` — owner-curated CSS selector specs (USER_ACTION_ITEMS.md §3)
 - `src/agents/` — agent functions; each returns structured data, never UI strings
   - `_util.ts` — `withTimeout(agent, ms, p)`, `fingerprint(s)`, `DEFAULT_AGENT_TIMEOUT_MS=30_000`
@@ -46,7 +47,7 @@
   - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`
 - `tests/` — vitest unit tests; all mocked, no real LLM calls
   - `_fixtures.ts` — `fixtureVibe`, `fixtureSources`
-  - `schemas.test.ts`, `fact.test.ts`, `logic.test.ts`, `vibe.test.ts`, `evaluator.test.ts`, `orchestrator.test.ts`, `seeds.test.ts`, `brave.test.ts`, `gemini.test.ts`
+  - `schemas.test.ts`, `fact.test.ts`, `logic.test.ts`, `vibe.test.ts`, `evaluator.test.ts`, `orchestrator.test.ts`, `seeds.test.ts`, `brave.test.ts`, `thegrid.test.ts`
 
 ## Key types
 
@@ -73,7 +74,9 @@
 
 ## Known gaps / TODO
 
-- `AnthropicLlm.chat` is a stub — throws until wired to the real API. (`GeminiLlm` and `BraveSearch` are real.)
+- All LLM calls go through `api/chat.ts` → THEGRID. No client-side apiKey. (`BraveSearch` is still BYOK for dev smoke runner only.)
+- No `/api/search` proxy yet — Brave is dev-only. Production extension cannot fact-check until that lands.
+- No rate-limiting on `/api/chat`. Add Vercel KV / Upstash when traffic warrants (TODO comment in `api/chat.ts`).
 - No `chrome.storage`-backed `KvStore` yet; only `InMemoryKv`. Add when extension shell lands.
 - `fmkorea.com` seed is curated; `dcinside.com`, `theqoo.net`, `ruliweb.com`, `ilbe.com` still have `__TODO__` markers. `isSkeleton(profile)` flags skeletons; smoke runner warns.
 - Per-site DOM extractor specs (`docs/site-extractors/*.md`) are skeletons (USER_ACTION_ITEMS.md §3); code-side `src/content/extractors/` not yet created.

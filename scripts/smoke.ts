@@ -2,17 +2,17 @@
  * End-to-end smoke test for the orchestrator.
  *
  * Usage:
- *   1. cp .env.example .env  # fill in GEMINI_API_KEY
+ *   1. (optional) cp .env.example .env and set BRAVE_API_KEY / PROXY_URL
  *   2. npm run smoke
  *
- * Hits a real LLM provider. Costs real tokens. Intended for owner dogfood
- * (USER_ACTION_ITEMS.md §9), not CI.
+ * Hits the deployed Vercel proxy at troll-breaker-browser.vercel.app/api/chat
+ * (which holds THEGRID_API_KEY server-side). Costs real tokens against the
+ * project owner's THEGRID account. Intended for dogfood, not CI.
  */
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GeminiLlm } from "../src/lib/llm/gemini.js";
-import { AnthropicLlm } from "../src/lib/llm/anthropic.js";
+import { TheGridLlm } from "../src/lib/llm/thegrid.js";
 import type { LlmClient } from "../src/lib/llm/types.js";
 import { MockSearch } from "../src/lib/search/mock.js";
 import { BraveSearch } from "../src/lib/search/brave.js";
@@ -23,29 +23,12 @@ import { runShield, runSword } from "../src/background/orchestrator.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SEEDS_DIR = resolve(REPO_ROOT, "extension/seeds");
+const DEFAULT_PROXY_URL = "https://troll-breaker-browser.vercel.app/api/chat";
 
 function buildLlm(): LlmClient {
-  const provider = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
-  if (provider === "gemini") {
-    const key = process.env.GEMINI_API_KEY ?? "";
-    if (!key) bail("GEMINI_API_KEY is empty. Edit .env and try again.");
-    const cfg: { apiKey: string; defaultModel?: string } = { apiKey: key };
-    if (process.env.GEMINI_MODEL) cfg.defaultModel = process.env.GEMINI_MODEL;
-    return new GeminiLlm(cfg);
-  }
-  if (provider === "anthropic") {
-    const key = process.env.ANTHROPIC_API_KEY ?? "";
-    if (!key) bail("ANTHROPIC_API_KEY is empty. Edit .env and try again.");
-    const cfg: { apiKey: string; defaultModel?: string } = { apiKey: key };
-    if (process.env.ANTHROPIC_MODEL) cfg.defaultModel = process.env.ANTHROPIC_MODEL;
-    return new AnthropicLlm(cfg);
-  }
-  bail(`Unknown LLM_PROVIDER='${provider}'. Use 'gemini' or 'anthropic'.`);
-}
-
-function bail(msg: string): never {
-  console.error(`[smoke] ${msg}`);
-  process.exit(1);
+  const proxyUrl = process.env.PROXY_URL || DEFAULT_PROXY_URL;
+  console.log(`[smoke] Using TheGrid proxy: ${proxyUrl}`);
+  return new TheGridLlm({ proxyUrl });
 }
 
 function buildSearch(): SearchClient {
