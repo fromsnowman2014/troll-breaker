@@ -7,7 +7,7 @@ import {
   type VibeDeps,
 } from "../agents/vibe.js";
 import { scoreAndCritique, type EvaluatorDeps } from "../agents/evaluator.js";
-import type { FactResult } from "../lib/schemas/fact.js";
+import type { FactResult, Source } from "../lib/schemas/fact.js";
 import type { Fallacy } from "../lib/schemas/fallacy.js";
 import type { Pipeline, ShieldResult, SwordResult } from "../lib/schemas/results.js";
 import type { VibeProfile } from "../lib/schemas/vibe.js";
@@ -46,7 +46,14 @@ export async function runShield(
   const pipeline = req.pipeline ?? pickPipeline(req.selected_text);
   const vibe = await getSiteVibe(deps, req.page_url);
 
-  const factPromise = safeFact(deps, req.selected_text);
+  // Extract any HTTPS URLs embedded in the selected text to use as known sources.
+  const inlineUrls = extractHttpsUrls(req.selected_text);
+  const inlineSources = inlineUrlsToSources(inlineUrls);
+
+  // Build a short search query: first sentence or first 120 chars of non-URL text.
+  const searchQuery = buildSearchQuery(req.selected_text);
+
+  const factPromise = safeFact(deps, req.selected_text, searchQuery, inlineSources);
   const fallaciesPromise = pipeline === "fast"
     ? Promise.resolve<Fallacy[]>([])
     : safeFallacies(deps, req.selected_text, vibe);
@@ -68,9 +75,46 @@ export async function runShield(
   };
 }
 
-async function safeFact(deps: OrchestratorDeps, claim: string): Promise<FactResult> {
+/** Extract all HTTPS URLs from arbitrary text. */
+function extractHttpsUrls(text: string): string[] {
+  const re = /https:\/\/[^\s"'<>)\]]+/g;
+  return [...new Set(text.match(re) ?? [])];
+}
+
+/** Turn raw URLs into minimal Source objects so they appear in candidate_sources. */
+function inlineUrlsToSources(urls: string[]): Source[] {
+  return urls.map((url) => {
+    // Derive a readable title from the URL hostname + path.
+    try {
+      const u = new URL(url);
+      const title = `${u.hostname}${u.pathname.replace(/\/$/, "") || ""}`;
+      return { title, url, snippet: `본문에 포함된 링크: ${url}` };
+    } catch {
+      return { title: url, url, snippet: `본문에 포함된 링크: ${url}` };
+    }
+  });
+}
+
+/**
+ * Build a short search query from the selected text.
+ * Strategy: strip URLs, take the first 120 chars of the remaining text.
+ */
+function buildSearchQuery(text: string): string {
+  const stripped = text.replace(/https?:\/\/[^\s]+/g, "").trim();
+  // Use the first sentence if it's short enough, otherwise truncate.
+  const firstSentence = stripped.split(/[.。!\n]/)[0]?.trim() ?? "";
+  if (firstSentence.length >= 10 && firstSentence.length <= 120) return firstSentence;
+  return stripped.slice(0, 120);
+}
+
+async function safeFact(
+  deps: OrchestratorDeps,
+  claim: string,
+  searchQuery: string,
+  additionalSources: Source[],
+): Promise<FactResult> {
   try {
-    return await verifyFactWithLinks(deps, { claim });
+    return await verifyFactWithLinks(deps, { claim, searchQuery, additionalSources });
   } catch (e) {
     if (e instanceof AppError) {
       return unverifiedFactStub(claim, e.message);

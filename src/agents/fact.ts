@@ -14,6 +14,10 @@ export interface FactDeps {
 
 export interface FactInput {
   claim: string;
+  /** Search query override — use a short phrase, not the full claim text. */
+  searchQuery?: string;
+  /** Pre-resolved sources to inject alongside search results (e.g. URLs found in selected text). */
+  additionalSources?: Source[];
   locale?: "ko" | "en";
   timeoutMs?: number;
   /** Skip cache read+write. Used by orchestrator when a fresh check is requested. */
@@ -75,7 +79,7 @@ export async function verifyFactWithLinks(
   const result = await withTimeout(
     "fact",
     timeoutMs,
-    runFactCheck(deps, input.claim, locale),
+    runFactCheck(deps, input.claim, locale, input.searchQuery, input.additionalSources ?? []),
   );
 
   await deps.storage.set(cacheKey, result, { ttlMs: TTL.factMemo });
@@ -86,12 +90,26 @@ async function runFactCheck(
   deps: FactDeps,
   claim: string,
   locale: "ko" | "en",
+  searchQuery?: string,
+  additionalSources: Source[] = [],
 ): Promise<FactResult> {
-  let candidates: Source[] = [];
+  const query = searchQuery ?? claim.slice(0, 120);
+  let searched: Source[] = [];
   try {
-    candidates = await deps.search.searchWeb(claim, 5);
+    searched = await deps.search.searchWeb(query, 5);
   } catch {
-    candidates = [];
+    searched = [];
+  }
+
+  // Merge: additionalSources first (higher signal — explicitly cited by the user), then search results.
+  // Deduplicate by URL.
+  const seen = new Set<string>();
+  const candidates: Source[] = [];
+  for (const s of [...additionalSources, ...searched]) {
+    if (!seen.has(s.url)) {
+      seen.add(s.url);
+      candidates.push(s);
+    }
   }
 
   const userMsg = renderUserMessage(claim, locale, candidates);
