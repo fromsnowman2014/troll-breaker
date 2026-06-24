@@ -14,11 +14,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals"],
+    "jsx": "react-jsx",
+    "types": ["node", "vitest/globals", "chrome", "react", "react-dom"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "api/**/*", "vitest.config.ts"]
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "api/**/*", "vitest.config.ts", "vite.config.ts"]
 }

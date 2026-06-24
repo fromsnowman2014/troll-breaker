@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isSkeleton, makeSeedLoader, nodeFsRawLoader } from "@/lib/seeds/index.js";
+import { isSkeleton, makeSeedLoader } from "@/lib/seeds/index.js";
+import { nodeFsRawLoader } from "@/lib/seeds/node.js";
 import { fixtureVibe } from "./_fixtures.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));

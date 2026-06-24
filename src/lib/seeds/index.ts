@@ -31,4 +31,5 @@ export function makeSeedLoader(raw: RawSeedLoader): (siteId: string) => Promise<
   };
 }
 
-export { nodeFsRawLoader } from "./node.js";
+// Node-only loader (not re-exported here to avoid bundling node:fs in browser builds).
+// Import directly: import { nodeFsRawLoader } from "../lib/seeds/node.js"

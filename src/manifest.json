@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Troll Breaker",
+  "version": "0.1.0",
+  "description": "Truth & Strike — Korean debate helper. Fact-check and sharpen your arguments.",
+  "permissions": ["contextMenus", "storage", "activeTab", "sidePanel", "tabs"],
+  "host_permissions": [
+    "https://troll-breaker.vercel.app/*",
+    "https://www.fmkorea.com/*",
+    "https://www.dcinside.com/*",
+    "https://gall.dcinside.com/*",
+    "https://theqoo.net/*",
+    "https://www.ruliweb.com/*",
+    "https://www.ilbe.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service_worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.fmkorea.com/*",
+        "https://www.dcinside.com/*",
+        "https://gall.dcinside.com/*",
+        "https://theqoo.net/*",
+        "https://www.ruliweb.com/*",
+        "https://www.ilbe.com/*"
+      ],
+      "js": ["src/content/content_script.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "options_page": "src/options/index.html",
+  "action": {
+    "default_title": "Troll Breaker",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

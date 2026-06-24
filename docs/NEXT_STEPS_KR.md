@@ -26,7 +26,7 @@ https://vercel.com/sein-ohs-projects/troll-breaker-browser → Settings → Envi
 `api/chat.ts`가 추가되었습니다. main에 push하면 Vercel이 자동 배포합니다.
 
 ```bash
-curl -X POST https://troll-breaker-browser.vercel.app/api/chat \
+curl -X POST https://troll-breaker.vercel.app/api/chat \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"ping"}],"max_tokens":20}'
 ```
@@ -51,8 +51,8 @@ cp .env.example .env
 
 채워야 하는 값 (선택):
 ```
-PROXY_URL=                  # 비워두면 https://troll-breaker-browser.vercel.app/api/chat 사용
-BRAVE_API_KEY=BSA...        # 없으면 smoke runner가 MockSearch 사용
+PROXY_URL=                  # 비워두면 https://troll-breaker.vercel.app/api/chat 사용
+BRAVE_API_KEY=BSA...        # 비워두면 https://troll-breaker.vercel.app/api/xxxx 사용
 ```
 
 **확인:**
@@ -166,7 +166,7 @@ grep -l __TODO__ docs/site-extractors/*.md   # _TEMPLATE.md 외엔 없어야 완
 
 ```bash
 # 0. 프록시 살아있나?
-curl -X POST https://troll-breaker-browser.vercel.app/api/chat \
+curl -X POST https://troll-breaker.vercel.app/api/chat \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"ping"}],"max_tokens":20}'
 

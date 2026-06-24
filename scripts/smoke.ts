@@ -5,7 +5,7 @@
  *   1. (optional) cp .env.example .env and set BRAVE_API_KEY / PROXY_URL
  *   2. npm run smoke
  *
- * Hits the deployed Vercel proxy at troll-breaker-browser.vercel.app/api/chat
+ * Hits the deployed Vercel proxy at troll-breaker.vercel.app/api/chat
  * (which holds THEGRID_API_KEY server-side). Costs real tokens against the
  * project owner's THEGRID account. Intended for dogfood, not CI.
  */
@@ -18,12 +18,13 @@ import { MockSearch } from "../src/lib/search/mock.js";
 import { BraveSearch } from "../src/lib/search/brave.js";
 import type { SearchClient } from "../src/lib/search/types.js";
 import { InMemoryKv } from "../src/lib/storage/memory.js";
-import { makeSeedLoader, nodeFsRawLoader, isSkeleton } from "../src/lib/seeds/index.js";
+import { makeSeedLoader, isSkeleton } from "../src/lib/seeds/index.js";
+import { nodeFsRawLoader } from "../src/lib/seeds/node.js";
 import { runShield, runSword } from "../src/background/orchestrator.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const SEEDS_DIR = resolve(REPO_ROOT, "extension/seeds");
-const DEFAULT_PROXY_URL = "https://troll-breaker-browser.vercel.app/api/chat";
+const DEFAULT_PROXY_URL = "https://troll-breaker.vercel.app/api/chat";
 
 function buildLlm(): LlmClient {
   const proxyUrl = process.env.PROXY_URL || DEFAULT_PROXY_URL;

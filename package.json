@@ -3,20 +3,35 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "tsx --env-file=.env scripts/smoke.ts"
+    "smoke": "tsx --env-file=.env scripts/smoke.ts",
+    "dev": "vite",
+    "build": "vite build"
   },
   "dependencies": {
+    "zustand": "^5.0.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@types/chrome": "^0.0.287",
     "@types/node": "^22.10.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
     "@vercel/node": "^3.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.17",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3",
+    "vite": "^5.4.11",
     "vitest": "^2.1.8"
   }
 }
