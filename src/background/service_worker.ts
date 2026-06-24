@@ -1,18 +1,19 @@
 import { TheGridLlm } from "../lib/llm/thegrid.js";
-import { MockSearch } from "../lib/search/mock.js";
+import { ProxySearch } from "../lib/search/proxy.js";
 import { ChromeKvStore } from "../lib/storage/chrome.js";
 import { makeSeedLoader } from "../lib/seeds/index.js";
 import { extensionRawLoader } from "../lib/seeds/extension.js";
-import { runShield } from "./orchestrator.js";
+import { runShield, runSword } from "./orchestrator.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
-import type { ShieldResult } from "../lib/schemas/results.js";
+import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
 
 const PROXY_URL = "https://troll-breaker.vercel.app/api/chat";
+const SEARCH_PROXY_URL = "https://troll-breaker.vercel.app/api/search";
 
 function buildDeps(): OrchestratorDeps {
   return {
     llm: new TheGridLlm({ proxyUrl: PROXY_URL }),
-    search: new MockSearch([]),
+    search: new ProxySearch({ proxyUrl: SEARCH_PROXY_URL }),
     storage: new ChromeKvStore(),
     loadSeed: makeSeedLoader(extensionRawLoader()),
   };
@@ -21,7 +22,9 @@ function buildDeps(): OrchestratorDeps {
 // Pending result waiting for side panel to signal ready.
 type PendingResult =
   | { kind: "shield/result"; request_id: string; payload: ShieldResult }
-  | { kind: "shield/error"; request_id: string; error: { code: string; message: string } };
+  | { kind: "shield/error"; request_id: string; error: { code: string; message: string } }
+  | { kind: "sword/result"; request_id: string; payload: SwordResult }
+  | { kind: "sword/error"; request_id: string; error: { code: string; message: string } };
 
 const pendingByTab = new Map<number, PendingResult>();
 
@@ -43,6 +46,41 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     pendingByTab.delete(tabId);
     chrome.runtime.sendMessage(pending);
   }
+});
+
+// Content script sends this when user clicks "✦ Strike" button.
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.kind !== "sword/request") return;
+  const draft: string = msg.draft ?? "";
+  const pageUrl: string = msg.page_url ?? "";
+  const tabId = sender.tab?.id;
+  if (!tabId) return;
+
+  const requestId = `sword-${Date.now()}`;
+
+  chrome.sidePanel.open({ tabId }).then(() => {
+    chrome.runtime.sendMessage({ kind: "sword/loading", request_id: requestId });
+  });
+
+  const deps = buildDeps();
+  runSword(deps, { request_id: requestId, draft, page_url: pageUrl })
+    .then((result) => {
+      const out: PendingResult = { kind: "sword/result", request_id: requestId, payload: result };
+      chrome.runtime.sendMessage(out).catch(() => {
+        pendingByTab.set(tabId, out);
+      });
+    })
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      const out: PendingResult = {
+        kind: "sword/error",
+        request_id: requestId,
+        error: { code: "unknown", message },
+      };
+      chrome.runtime.sendMessage(out).catch(() => {
+        pendingByTab.set(tabId, out);
+      });
+    });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {

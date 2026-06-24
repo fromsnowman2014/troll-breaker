@@ -1,8 +1,8 @@
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { create } from "zustand";
-import { ResultCard, LoadingCard, ErrorCard } from "./ResultCard.js";
-import type { ShieldResult } from "../lib/schemas/results.js";
+import { ResultCard, SwordCard, LoadingCard, ErrorCard } from "./ResultCard.js";
+import type { ShieldResult, SwordResult } from "../lib/schemas/results.js";
 import type { AppError } from "../lib/schemas/errors.js";
 import "./index.css";
 
@@ -12,6 +12,7 @@ type PanelState =
   | { phase: "idle" }
   | { phase: "loading"; request_id: string }
   | { phase: "shield"; result: ShieldResult }
+  | { phase: "sword"; result: SwordResult }
   | { phase: "error"; error: AppErrorObj };
 
 type PanelStore = {
@@ -27,18 +28,23 @@ const usePanel = create<PanelStore>((set) => ({
 type ChromeMessage =
   | { kind: "shield/loading"; request_id: string }
   | { kind: "shield/result"; request_id: string; payload: ShieldResult }
-  | { kind: "shield/error"; request_id: string; error: AppErrorObj };
+  | { kind: "shield/error"; request_id: string; error: AppErrorObj }
+  | { kind: "sword/loading"; request_id: string }
+  | { kind: "sword/result"; request_id: string; payload: SwordResult }
+  | { kind: "sword/error"; request_id: string; error: AppErrorObj };
 
 function useChromeMessages() {
   const setPanel = usePanel((s) => s.set);
   useEffect(() => {
     const listener = (msg: ChromeMessage) => {
-      if (msg.kind === "shield/loading") {
+      if (msg.kind === "shield/loading" || msg.kind === "sword/loading") {
         setPanel({ phase: "loading", request_id: msg.request_id });
       } else if (msg.kind === "shield/result") {
         setPanel({ phase: "shield", result: msg.payload });
-      } else if (msg.kind === "shield/error") {
+      } else if (msg.kind === "shield/error" || msg.kind === "sword/error") {
         setPanel({ phase: "error", error: msg.error });
+      } else if (msg.kind === "sword/result") {
+        setPanel({ phase: "sword", result: msg.payload });
       }
     };
     chrome.runtime.onMessage.addListener(listener);
@@ -64,8 +70,11 @@ function App() {
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <header className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
         <span className="font-bold text-sm tracking-wide text-blue-400">Troll Breaker</span>
-        {state.phase !== "idle" && (
+        {state.phase === "shield" && (
           <span className="text-xs text-slate-500 ml-auto">Truth Check</span>
+        )}
+        {state.phase === "sword" && (
+          <span className="text-xs text-slate-500 ml-auto">✦ Strike</span>
         )}
       </header>
 
@@ -78,6 +87,7 @@ function App() {
         )}
         {state.phase === "loading" && <LoadingCard />}
         {state.phase === "shield" && <ResultCard result={state.result} />}
+        {state.phase === "sword" && <SwordCard result={state.result} />}
         {state.phase === "error" && <ErrorCard error={state.error} />}
       </main>
     </div>

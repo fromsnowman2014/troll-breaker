@@ -1,6 +1,6 @@
 # Code Map
 
-> Last updated: 2026-06-23 (Phase 0+1 extension shell)
+> Last updated: 2026-06-23 (Phase 2: Sword mode floating button)
 > Update protocol: see CLAUDE.md → "Source Code Map".
 
 ## Module tree
@@ -20,10 +20,12 @@
   - `structured.ts` — `structuredChat(llm, schema, inputSchema, req, agentName)` — tool-use w/ 1 retry
 - `api/` — Vercel serverless functions (deployed to troll-breaker.vercel.app)
   - `chat.ts` — `POST /api/chat` proxy; whitelists fields, caps max_tokens, adds `Authorization: Bearer $THEGRID_API_KEY` to outbound THEGRID call
+  - `search.ts` — `POST /api/search` proxy; accepts `{ query, max? }`, forwards to Brave API with `$BRAVE_API_KEY`, returns raw Brave JSON
 - `src/lib/search/` — search adapter
   - `types.ts` — `SearchClient.searchWeb(query, max?) → Source[]`
   - `mock.ts` — `MockSearch(canned)`
-  - `brave.ts` — `BraveSearch` (fetch-based; `X-Subscription-Token`)
+  - `brave.ts` — `BraveSearch` (fetch-based; `X-Subscription-Token`; dev/smoke runner only)
+  - `proxy.ts` — `ProxySearch({ proxyUrl })` — POSTs to `/api/search`, parses Brave JSON into `Source[]`
 - `src/lib/storage/` — KV abstraction (vibe cache, fact memo)
   - `types.ts` — `KvStore { get, set(opts.ttlMs), delete, clear }`
   - `memory.ts` — `InMemoryKv(now?)` with TTL eviction on read
@@ -45,15 +47,15 @@
   - `vibe.ts` — `getSiteVibe(deps, url)`, `rewriteInVibe(deps, text, vibe, opts)`, `finalizeConceptPost(deps, input)`, `urlToSiteId(url)`
   - `evaluator.ts` — `scoreAndCritique(deps, {draft, vibe}) → EvalScore`; PRD §5 4-axis rubric
 - `src/background/`
-  - `service_worker.ts` — MV3 service worker entry; registers "Truth Check" context menu; calls `runShield` on click; opens side panel; routes result via `chrome.tabs.sendMessage`
+  - `service_worker.ts` — MV3 service worker entry; registers "Truth Check" context menu; handles `sword/request` from content script; calls `runShield`/`runSword`; opens side panel; routes results via `chrome.runtime.sendMessage` + `pendingByTab` fallback
   - `orchestrator.ts` — `runShield`, `runSword`, `runRefine`, `pickPipeline(text)`; threshold `STANDARD_THRESHOLD_CHARS=500`
 - `src/content/`
-  - `content_script.ts` — skeleton (Phase 2: floating button for Sword mode)
+  - `content_script.ts` — injects "✦ Strike" floating button into `<textarea>` and `[contenteditable]`; sends `sword/request` on click; listens for `insert_back` to write `final_post` back into last focused textarea; `MutationObserver` for dynamic elements
 - `src/sidepanel/`
   - `index.html` — React root HTML
   - `index.css` — Tailwind base styles
-  - `app.tsx` — Zustand store (`PanelState`); `chrome.runtime.onMessage` listener; renders `ResultCard` / `LoadingCard` / `ErrorCard`
-  - `ResultCard.tsx` — `ResultCard({result: ShieldResult})`, `LoadingCard()`, `ErrorCard({error})`
+  - `app.tsx` — Zustand store (`PanelState`); `chrome.runtime.onMessage` listener; renders Shield/Sword/Loading/Error cards; `PanelState` includes `{ phase: "sword"; result: SwordResult }`
+  - `ResultCard.tsx` — `ResultCard({result: ShieldResult})`, `SwordCard({result: SwordResult})` (axes, line_critique, final_post, 복사 button), `LoadingCard()`, `ErrorCard({error})`
 - `src/options/`
   - `index.html` — options HTML
   - `app.tsx` — minimal options page (no key entry UI)
@@ -96,12 +98,12 @@
 ## Known gaps / TODO
 
 - All LLM calls go through `api/chat.ts` → THEGRID. No client-side apiKey. (`BraveSearch` is still BYOK for dev smoke runner only.)
-- No `/api/search` proxy yet — Brave is dev-only. Production extension fact-check is LLM-only until that lands (search dep uses `MockSearch([])` in service worker).
+- No rate-limiting on `/api/search`. Add Vercel KV / Upstash when traffic warrants (TODO comment in `api/search.ts`).
 - No rate-limiting on `/api/chat`. Add Vercel KV / Upstash when traffic warrants (TODO comment in `api/chat.ts`).
 - `fmkorea.com` seed is curated; `dcinside.com`, `theqoo.net`, `ruliweb.com`, `ilbe.com` still have `__TODO__` markers.
 - Per-site DOM extractor specs (`docs/site-extractors/*.md`) are skeletons (USER_ACTION_ITEMS.md §3); `src/content/extractors/` not yet created.
-- Content script is empty — Sword mode floating button (Phase 2) not yet implemented.
+- Sword mode floating button implemented (Phase 2). Per-site DOM extractor specs are still skeletons.
 - "Deep Analyze" pipeline currently behaves like "Standard" — multi-claim splitter not implemented.
 - No `chrome.storage` migration / `schema_version` plumbing (DATA_SCHEMAS.md §5) — needed only when persistence lands.
 - No `evals/` harness. Deferred (PROMPT_GUIDELINES.md §6).
-- Side panel sends messages to side panel via `chrome.tabs.sendMessage` — side panel must be open before the message arrives. If race occurs, messages are lost. Phase 2: use `chrome.runtime.sendMessage` + retry logic.
+- Both Shield and Sword now use `chrome.runtime.sendMessage` + `pendingByTab` fallback — race condition resolved.
