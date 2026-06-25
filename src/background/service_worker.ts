@@ -65,7 +65,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   const requestId = `sword-${Date.now()}`;
 
   chrome.sidePanel.open({ tabId }).then(() => {
-    chrome.runtime.sendMessage({ kind: "sword/loading", request_id: requestId });
+    chrome.runtime.sendMessage({ kind: "sword/loading", request_id: requestId }).catch(() => {});
   });
 
   const deps = buildDeps();
@@ -103,7 +103,7 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
     page_url: msg.page_url ?? "",
   })
     .then((result) => {
-      chrome.runtime.sendMessage({ kind: "reply/result", request_id: requestId, payload: result });
+      chrome.runtime.sendMessage({ kind: "reply/result", request_id: requestId, payload: result }).catch(() => {});
     })
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -111,7 +111,7 @@ chrome.runtime.onMessage.addListener((msg, _sender) => {
         kind: "reply/error",
         request_id: requestId,
         error: { code: "unknown", message },
-      });
+      }).catch(() => {});
     });
 });
 
@@ -124,7 +124,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   // Open side panel first, then send loading state.
   chrome.sidePanel.open({ tabId }).then(() => {
-    chrome.runtime.sendMessage({ kind: "shield/loading", request_id: requestId });
+    chrome.runtime.sendMessage({ kind: "shield/loading", request_id: requestId }).catch(() => {});
   });
 
   const deps = buildDeps();

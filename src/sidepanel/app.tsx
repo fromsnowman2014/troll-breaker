@@ -106,19 +106,19 @@ function App() {
   const { state, shieldResult, replyResult, replyLoading } = usePanel();
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <header className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
-        <span className="font-bold text-sm tracking-wide text-blue-400">Troll Breaker</span>
+    <div className="min-h-screen bg-white text-gray-900">
+      <header className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <span className="font-bold text-sm tracking-wide text-blue-600">Troll Breaker</span>
         {state.phase === "sword" && (
-          <span className="text-xs text-slate-500 ml-auto">✦ Strike</span>
+          <span className="text-xs text-gray-400 ml-auto">✦ Strike</span>
         )}
       </header>
 
       <main>
         {state.phase === "idle" && (
-          <div className="p-6 text-center text-slate-500 text-sm space-y-2">
+          <div className="p-6 text-center text-gray-400 text-sm space-y-2">
             <p>텍스트를 선택하고 우클릭 →</p>
-            <p className="font-medium text-slate-400">"Truth Check"</p>
+            <p className="font-medium text-gray-600">"Truth Check"</p>
           </div>
         )}
         {state.phase === "loading" && <LoadingCard />}
